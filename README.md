@@ -78,10 +78,13 @@ unless it has its own override:
 | SteamGridDB API key | Optional — see below |
 
 Any game can override its enabled state or interval individually from its
-**Manage Covers** window without touching these global defaults; a game's
-first override is seeded from whatever the global defaults are at that
-moment, so giving one game its own interval doesn't reset anything else
-about it.
+**Manage Covers** window without touching these global defaults. Each setting
+is overridden independently: giving one game its own interval doesn't freeze
+any of its other settings, so if you later change the global notification
+preference (for example), that game keeps following it live unless you've
+overridden that setting too. Click **Reset to Global Defaults** in a game's
+Manage Covers window to clear all of its overrides and have it follow every
+current global default again.
 
 Settings are validated when you close the settings page — an interval under
 one minute is rejected with an explanation rather than silently accepted or
@@ -115,8 +118,14 @@ Right-click a game in Playnite → **Cover Shuffle**:
 | Add Cover → SteamGridDB | Search and browse SteamGridDB covers visually |
 | Add Cover → Playnite Metadata | Pull in the game's existing cover/background/icon |
 | Shuffle Now | Immediately advances to the next cover in the pool |
-| Manage Covers | View covers, current status, and next shuffle time; remove covers from the pool |
+| Manage Covers | View covers, current status, and next shuffle time; choose a specific cover, or remove covers from the pool |
 | Restore Original Cover | Puts the game's original cover back |
+
+Inside **Manage Covers**, each cover card has a **Use This Cover** button to
+jump directly to that cover instead of letting the randomized shuffle pick
+one. This is a manual override: it still updates the game's cover, usage
+stats, and next scheduled shuffle time, but it's recorded separately from a
+normal "Shuffle Now" pick so the two don't get conflated.
 
 The main Playnite menu has a **Cover Shuffle Manager...** entry for managing
 many games at once: search, bulk enable/disable/interval, configuration
@@ -210,6 +219,9 @@ exceptions to you.
 - Outside of launching a game, a due shuffle is applied at Playnite startup
   only — a game left running for days past its interval, without being
   relaunched, shuffles at the next restart rather than mid-session.
+- The startup shuffle only applies to installed games; an enabled game that
+  isn't installed stays due and shuffles the next time Playnite starts after
+  it's installed.
 - The Playnite Metadata provider only picks up artwork already downloaded to
   a local file, not a bare remote URL some library plugins store instead.
 - Configuration import/export is intended for the same Playnite library

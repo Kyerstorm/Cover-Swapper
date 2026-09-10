@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Domain.Shuffling;
@@ -38,11 +39,8 @@ namespace PluginCoverShuffle.Playnite.Integration
             _shuffleEngine = shuffleEngine ?? throw new ArgumentNullException(nameof(shuffleEngine));
         }
 
-        /// <summary>Whether Cover Shuffle is currently enabled for this specific game.</summary>
-        public bool IsEnabled(Guid gameId)
-        {
-            return _repository.GetGameConfiguration(gameId)?.SettingsOverride?.Enabled ?? false;
-        }
+        /// <summary>Whether Cover Shuffle is currently enabled for this specific game: its own override, or the current global default.</summary>
+        public bool IsEnabled(Guid gameId) => ResolveEffectiveSettings(gameId).Enabled;
 
         /// <summary>Whether the original cover has been captured and can be restored.</summary>
         public bool HasSavedOriginalCover(Guid gameId)
@@ -136,28 +134,82 @@ namespace PluginCoverShuffle.Playnite.Integration
                     continue;
                 }
 
-                _gameService.SetCoverReference(gameId, _storage.GetAbsolutePath(selected.LocalPath));
-
-                selected.LastUsedAt = DateTime.UtcNow;
-                selected.UsageCount += 1;
-                _repository.UpdateCover(selected);
-
-                var now = DateTime.UtcNow;
-                _repository.SaveShuffleState(new ShuffleState
-                {
-                    GameId = gameId,
-                    CurrentCoverId = selected.CoverId,
-                    LastShuffleAt = now,
-                    NextShuffleAt = now.Add(GetEffectiveInterval(gameId)),
-                    ShuffleCycle = advance.RemainingCycle.ToList()
-                });
-
-                _logger.Info($"Shuffled to cover '{selected.CoverId}' for game '{gameId}'.");
-                return ShuffleResult.Ok();
+                return ApplySelectedCover(gameId, selected, advance.RemainingCycle, ShuffleTrigger.Random);
             }
 
             return ShuffleResult.Failed(
                 "None of this game's covers could be found on disk. Open \"Manage Covers\" or run Maintenance to clean up missing covers.");
+        }
+
+        /// <summary>
+        /// Applies a specific, user-picked cover, overriding the randomized
+        /// shuffle cycle. Recorded with <see cref="ShuffleTrigger.Manual"/> so
+        /// it can be distinguished from an engine-selected shuffle for future
+        /// statistics.
+        /// </summary>
+        public ShuffleResult ChooseCover(Guid gameId, Guid coverId)
+        {
+            var covers = _repository.GetCovers(gameId);
+            var selected = covers.FirstOrDefault(c => c.CoverId == coverId);
+            if (selected == null)
+            {
+                return ShuffleResult.Failed("That cover is no longer part of this game's cover pool.");
+            }
+
+            if (!_storage.CoverFileExists(selected.LocalPath))
+            {
+                return ShuffleResult.Failed(
+                    "That cover's file could not be found on disk. Open \"Manage Covers\" or run Maintenance to clean up missing covers.");
+            }
+
+            // Applying a cover overwrites Game.CoverImage, so the true
+            // original must be captured first even if Enable was never used.
+            CaptureOriginalCoverIfMissing(gameId);
+
+            var state = _repository.GetShuffleState(gameId);
+            var remainingCycle = state?.ShuffleCycle ?? new List<Guid>();
+
+            // The manually chosen cover has now been shown, so it must not
+            // stay queued in the randomized cycle - otherwise the very next
+            // "Shuffle Now" could hand the same cover right back out,
+            // violating the no-immediate-repeat invariant.
+            var cycleIndex = remainingCycle.IndexOf(coverId);
+            if (cycleIndex >= 0)
+            {
+                remainingCycle = remainingCycle.ToList();
+                remainingCycle.RemoveAt(cycleIndex);
+            }
+
+            return ApplySelectedCover(gameId, selected, remainingCycle, ShuffleTrigger.Manual);
+        }
+
+        /// <summary>
+        /// Applies <paramref name="selected"/> as the game's cover and
+        /// records every side effect shared by both a randomized shuffle and
+        /// a manual override: usage stats, persisted shuffle state, and the
+        /// next scheduled shuffle time.
+        /// </summary>
+        private ShuffleResult ApplySelectedCover(Guid gameId, Cover selected, IReadOnlyList<Guid> remainingCycle, ShuffleTrigger trigger)
+        {
+            _gameService.SetCoverReference(gameId, _storage.GetAbsolutePath(selected.LocalPath));
+
+            selected.LastUsedAt = DateTime.UtcNow;
+            selected.UsageCount += 1;
+            _repository.UpdateCover(selected);
+
+            var now = DateTime.UtcNow;
+            _repository.SaveShuffleState(new ShuffleState
+            {
+                GameId = gameId,
+                CurrentCoverId = selected.CoverId,
+                LastShuffleAt = now,
+                NextShuffleAt = now.Add(GetEffectiveInterval(gameId)),
+                ShuffleCycle = remainingCycle.ToList(),
+                LastShuffleTrigger = trigger
+            });
+
+            _logger.Info($"{(trigger == ShuffleTrigger.Manual ? "Manually chose" : "Shuffled to")} cover '{selected.CoverId}' for game '{gameId}'.");
+            return ShuffleResult.Ok();
         }
 
         /// <summary>The interval currently governing this game's scheduled shuffles: its own override, or the global default.</summary>
@@ -170,15 +222,29 @@ namespace PluginCoverShuffle.Playnite.Integration
         public bool GetEffectiveShuffleOnGameLaunch(Guid gameId) => ResolveEffectiveSettings(gameId).ShuffleOnGameLaunch;
 
         /// <summary>
-        /// A per-game override, when saved, is a complete settings snapshot
-        /// (not a sparse patch), so it is used as-is in full; otherwise the
-        /// current global default applies.
+        /// Resolves the effective settings for a game field-by-field: each
+        /// setting independently uses the game's own override when present,
+        /// or the current global default otherwise. This is what makes
+        /// overriding one setting (e.g. interval) not freeze every other
+        /// setting away from future global changes.
         /// </summary>
         private CoverShuffleSettings ResolveEffectiveSettings(Guid gameId)
         {
-            return _repository.GetGameConfiguration(gameId)?.SettingsOverride
-                ?? _globalSettingsProvider()
-                ?? new CoverShuffleSettings();
+            var global = _globalSettingsProvider() ?? new CoverShuffleSettings();
+            var overrides = _repository.GetGameConfiguration(gameId)?.SettingsOverride;
+
+            return new CoverShuffleSettings
+            {
+                Enabled = overrides?.Enabled ?? global.Enabled,
+                Interval = overrides?.Interval ?? global.Interval,
+                Mode = overrides?.Mode ?? global.Mode,
+                AvoidConsecutiveDuplicates = overrides?.AvoidConsecutiveDuplicates ?? global.AvoidConsecutiveDuplicates,
+                ShuffleOnStartup = overrides?.ShuffleOnStartup ?? global.ShuffleOnStartup,
+                ShuffleOnGameLaunch = overrides?.ShuffleOnGameLaunch ?? global.ShuffleOnGameLaunch,
+                NotificationPreference = overrides?.NotificationPreference ?? global.NotificationPreference,
+                NewGameBehavior = overrides?.NewGameBehavior ?? global.NewGameBehavior,
+                SteamGridDbApiKey = global.SteamGridDbApiKey
+            };
         }
 
         private void CaptureOriginalCoverIfMissing(Guid gameId)
@@ -198,55 +264,57 @@ namespace PluginCoverShuffle.Playnite.Integration
             _logger.Debug($"Captured original cover for game '{gameId}'.");
         }
 
-        /// <summary>Sets a per-game interval override, independent of enable state.</summary>
+        /// <summary>Sets a per-game interval override, independent of every other setting.</summary>
         public void SetIntervalOverride(Guid gameId, TimeSpan interval)
         {
-            var configuration = GetOrCreateConfigurationWithOverride(gameId);
+            var configuration = GetOrCreateConfiguration(gameId);
             configuration.SettingsOverride.Interval = interval;
             _repository.SaveGameConfiguration(configuration);
         }
 
         private void SetEnabled(Guid gameId, bool enabled)
         {
-            var configuration = GetOrCreateConfigurationWithOverride(gameId);
+            var configuration = GetOrCreateConfiguration(gameId);
             configuration.SettingsOverride.Enabled = enabled;
             _repository.SaveGameConfiguration(configuration);
         }
 
         /// <summary>
-        /// A game's first per-game override must start as a full snapshot of
-        /// the current global settings, not a bare <see cref="CoverShuffleSettings"/>
-        /// with type defaults — otherwise changing one setting for a game
-        /// (e.g. enabling it, or giving it its own interval) would silently
-        /// reset every other setting for that game away from whatever the
-        /// user has configured globally.
+        /// Clears every per-game override for this game so it goes back to
+        /// following the global defaults for all settings, live. The
+        /// <see cref="GameConfiguration"/> record itself is kept (rather than
+        /// deleted) so the game stays known to Cover Shuffle (e.g. still
+        /// checked for due shuffles). Safe to call for a game with no
+        /// configuration at all.
         /// </summary>
-        private GameConfiguration GetOrCreateConfigurationWithOverride(Guid gameId)
+        public void ResetOverridesToGlobalDefaults(Guid gameId)
+        {
+            var configuration = _repository.GetGameConfiguration(gameId);
+            if (configuration == null || configuration.SettingsOverride == null)
+            {
+                return;
+            }
+
+            configuration.SettingsOverride = null;
+            _repository.SaveGameConfiguration(configuration);
+        }
+
+        /// <summary>
+        /// A game's first per-game override starts as an empty (all-inherit)
+        /// <see cref="GameSettingsOverride"/> rather than a snapshot of
+        /// current global values, so setting one field (e.g. enabling the
+        /// game) never freezes any other field away from future global
+        /// changes.
+        /// </summary>
+        private GameConfiguration GetOrCreateConfiguration(Guid gameId)
         {
             var configuration = _repository.GetGameConfiguration(gameId) ?? new GameConfiguration { GameId = gameId };
             if (configuration.SettingsOverride == null)
             {
-                configuration.SettingsOverride = CloneGlobalSettings();
+                configuration.SettingsOverride = new GameSettingsOverride();
             }
 
             return configuration;
-        }
-
-        private CoverShuffleSettings CloneGlobalSettings()
-        {
-            var global = _globalSettingsProvider() ?? new CoverShuffleSettings();
-            return new CoverShuffleSettings
-            {
-                Enabled = global.Enabled,
-                Interval = global.Interval,
-                Mode = global.Mode,
-                AvoidConsecutiveDuplicates = global.AvoidConsecutiveDuplicates,
-                ShuffleOnStartup = global.ShuffleOnStartup,
-                ShuffleOnGameLaunch = global.ShuffleOnGameLaunch,
-                NotificationPreference = global.NotificationPreference,
-                SteamGridDbApiKey = global.SteamGridDbApiKey,
-                NewGameBehavior = global.NewGameBehavior
-            };
         }
     }
 }

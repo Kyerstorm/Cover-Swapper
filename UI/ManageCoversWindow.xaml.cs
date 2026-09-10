@@ -133,6 +133,12 @@ namespace PluginCoverShuffle.UI
             RefreshIntervalBox();
         }
 
+        private void ResetToGlobalDefaultsButton_Click(object sender, RoutedEventArgs e)
+        {
+            _viewModel.ResetToGlobalDefaults();
+            RefreshIntervalBox();
+        }
+
         private void ShuffleNowButton_Click(object sender, RoutedEventArgs e) => _viewModel.ShuffleNow();
 
         private void RestoreOriginalButton_Click(object sender, RoutedEventArgs e) => _viewModel.RestoreOriginal();
@@ -141,6 +147,12 @@ namespace PluginCoverShuffle.UI
         {
             var coverId = (Guid)((Button)sender).Tag;
             _viewModel.Remove(coverId);
+        }
+
+        private void UseThisCoverButton_Click(object sender, RoutedEventArgs e)
+        {
+            var coverId = (Guid)((Button)sender).Tag;
+            _viewModel.ChooseCover(coverId);
         }
 
         private void AddSteamGridDbButton_Click(object sender, RoutedEventArgs e)

@@ -44,6 +44,17 @@ namespace PluginCoverShuffle.Playnite.Integration
                 return;
             }
 
+            // Only shuffle games that are actually installed - there's no
+            // point rotating artwork for a game the user can't currently
+            // play, and a game service isn't always available to check (some
+            // callers omit it), so the check is skipped rather than assumed
+            // false in that case.
+            if (_gameService != null && !_gameService.IsGameInstalled(gameId))
+            {
+                _logger.Debug($"Scheduled shuffle skipped for game '{gameId}': not installed.");
+                return;
+            }
+
             var state = _repository.GetShuffleState(gameId);
             var isDue = state?.NextShuffleAt == null || state.NextShuffleAt.Value <= DateTime.UtcNow;
             if (!isDue)

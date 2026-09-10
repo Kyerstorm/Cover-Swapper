@@ -25,5 +25,8 @@ namespace PluginCoverShuffle.Playnite.Integration
 
         /// <summary>Returns the game's display name, or null if it cannot be found.</summary>
         string GetGameName(Guid gameId);
+
+        /// <summary>Whether the game is currently installed. False if the game cannot be found.</summary>
+        bool IsGameInstalled(Guid gameId);
     }
 }

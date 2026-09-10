@@ -74,6 +74,26 @@ namespace PluginCoverShuffle.UI
             private set => SetValue(ref _currentIntervalHours, value);
         }
 
+        private bool _isIntervalOverridden;
+
+        /// <summary>Whether this game has its own interval override, as opposed to following the current global default.</summary>
+        public bool IsIntervalOverridden
+        {
+            get => _isIntervalOverridden;
+            private set => SetValue(ref _isIntervalOverridden, value, nameof(IsIntervalOverridden), nameof(IntervalSourceText));
+        }
+
+        public string IntervalSourceText => IsIntervalOverridden ? "(custom)" : "(inherited from global default)";
+
+        private bool _hasAnyOverride;
+
+        /// <summary>Whether this game has any per-game override at all, i.e. whether "Reset to Global Defaults" has anything to do.</summary>
+        public bool HasAnyOverride
+        {
+            get => _hasAnyOverride;
+            private set => SetValue(ref _hasAnyOverride, value);
+        }
+
         private string _nextShuffleText;
 
         public string NextShuffleText
@@ -132,6 +152,19 @@ namespace PluginCoverShuffle.UI
             HasSavedOriginal = _coverService.HasSavedOriginalCover(_gameId);
             CurrentIntervalHours = Math.Round(_coverService.GetEffectiveInterval(_gameId).TotalHours, 1);
             NextShuffleText = ComputeNextShuffleText(state);
+
+            var overrides = _repository.GetGameConfiguration(_gameId)?.SettingsOverride;
+            IsIntervalOverridden = overrides?.Interval != null;
+            HasAnyOverride = overrides != null && (
+                overrides.Enabled != null ||
+                overrides.Interval != null ||
+                overrides.Mode != null ||
+                overrides.AvoidConsecutiveDuplicates != null ||
+                overrides.ShuffleOnStartup != null ||
+                overrides.ShuffleOnGameLaunch != null ||
+                overrides.NotificationPreference != null ||
+                overrides.NewGameBehavior != null);
+
             OnPropertyChanged(nameof(IsEmpty));
         }
 
@@ -197,10 +230,26 @@ namespace PluginCoverShuffle.UI
             Reload();
         }
 
+        /// <summary>Clears every per-game override, so this game follows all current global defaults again.</summary>
+        public void ResetToGlobalDefaults()
+        {
+            _coverService.ResetOverridesToGlobalDefaults(_gameId);
+            StatusMessage = "Reset to global defaults.";
+            Reload();
+        }
+
         public void ShuffleNow()
         {
             var result = _coverService.ShuffleToNextCover(_gameId);
             StatusMessage = result.Success ? "Shuffled to a new cover." : result.Message;
+            Reload();
+        }
+
+        /// <summary>Explicitly applies a specific cover, overriding the randomized shuffle cycle.</summary>
+        public void ChooseCover(Guid coverId)
+        {
+            var result = _coverService.ChooseCover(_gameId, coverId);
+            StatusMessage = result.Success ? "Cover applied." : result.Message;
             Reload();
         }
 

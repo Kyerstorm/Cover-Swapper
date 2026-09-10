@@ -236,7 +236,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             _repository.SaveGameConfiguration(new GameConfiguration
             {
                 GameId = gameId,
-                SettingsOverride = new CoverShuffleSettings { Interval = TimeSpan.FromHours(2) }
+                SettingsOverride = new GameSettingsOverride { Interval = TimeSpan.FromHours(2) }
             });
             var before = DateTime.UtcNow;
 
@@ -261,7 +261,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         }
 
         [Fact]
-        public void EnableCoverShuffle_ForGameWithNoOverrideYet_SeedsOverrideFromCurrentGlobalSettings()
+        public void EnableCoverShuffle_ForGameWithNoOverrideYet_DoesNotResetUnrelatedSettings()
         {
             _globalSettings = new CoverShuffleSettings
             {
@@ -277,6 +277,56 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             // that never had its own override before.
             Assert.Equal(TimeSpan.FromHours(3), _service.GetEffectiveInterval(gameId));
             Assert.Equal(NotificationPreference.Silent, _service.GetEffectiveNotificationPreference(gameId));
+        }
+
+        [Fact]
+        public void EnableCoverShuffle_OnlyOverridesEnabled_OtherSettingsKeepTrackingGlobalChangesLive()
+        {
+            _globalSettings = new CoverShuffleSettings { Interval = TimeSpan.FromHours(3) };
+            var gameId = Guid.NewGuid();
+
+            _service.EnableCoverShuffle(gameId);
+            Assert.Equal(TimeSpan.FromHours(3), _service.GetEffectiveInterval(gameId));
+
+            // Changing the global interval afterwards must still propagate to
+            // this game, since only "Enabled" was ever explicitly overridden.
+            _globalSettings = new CoverShuffleSettings { Interval = TimeSpan.FromHours(9) };
+            Assert.Equal(TimeSpan.FromHours(9), _service.GetEffectiveInterval(gameId));
+            Assert.True(_service.IsEnabled(gameId));
+        }
+
+        [Fact]
+        public void IsEnabled_ForNeverConfiguredGame_ReflectsCurrentGlobalDefault()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+
+            Assert.True(_service.IsEnabled(gameId));
+
+            _globalSettings = new CoverShuffleSettings { Enabled = false };
+            Assert.False(_service.IsEnabled(gameId));
+        }
+
+        [Fact]
+        public void ResetOverridesToGlobalDefaults_ClearsOverride_AndGameFollowsCurrentGlobalValues()
+        {
+            _globalSettings = new CoverShuffleSettings { Interval = TimeSpan.FromHours(3), Enabled = false };
+            var gameId = Guid.NewGuid();
+            _service.EnableCoverShuffle(gameId);
+            _service.SetIntervalOverride(gameId, TimeSpan.FromHours(1));
+            Assert.True(_service.IsEnabled(gameId));
+            Assert.Equal(TimeSpan.FromHours(1), _service.GetEffectiveInterval(gameId));
+
+            _service.ResetOverridesToGlobalDefaults(gameId);
+
+            Assert.False(_service.IsEnabled(gameId));
+            Assert.Equal(TimeSpan.FromHours(3), _service.GetEffectiveInterval(gameId));
+        }
+
+        [Fact]
+        public void ResetOverridesToGlobalDefaults_ForGameWithNoConfiguration_DoesNotThrow()
+        {
+            _service.ResetOverridesToGlobalDefaults(Guid.NewGuid());
         }
 
         [Fact]
@@ -306,6 +356,111 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
 
             Assert.True(result.Success);
             Assert.Equal(_storage.GetAbsolutePath(present.LocalPath), _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void ShuffleToNextCover_RecordsRandomAsTheShuffleTrigger()
+        {
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+
+            _service.ShuffleToNextCover(gameId);
+
+            var state = _repository.GetShuffleState(gameId);
+            Assert.Equal(ShuffleTrigger.Random, state.LastShuffleTrigger);
+        }
+
+        [Fact]
+        public void ChooseCover_AppliesTheRequestedCover_AndCapturesOriginalFirst()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            var first = AddStoredCover(gameId);
+            var second = AddStoredCover(gameId);
+
+            var result = _service.ChooseCover(gameId, second.CoverId);
+
+            Assert.True(result.Success);
+            Assert.Equal(_storage.GetAbsolutePath(second.LocalPath), _gameService.GetCoverReference(gameId));
+            Assert.True(_service.HasSavedOriginalCover(gameId));
+        }
+
+        [Fact]
+        public void ChooseCover_TracksUsageAndRecordsManualAsTheShuffleTrigger()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = AddStoredCover(gameId);
+
+            _service.ChooseCover(gameId, cover.CoverId);
+
+            var updatedCover = _repository.GetCover(gameId, cover.CoverId);
+            Assert.Equal(1, updatedCover.UsageCount);
+            Assert.NotNull(updatedCover.LastUsedAt);
+
+            var state = _repository.GetShuffleState(gameId);
+            Assert.Equal(ShuffleTrigger.Manual, state.LastShuffleTrigger);
+            Assert.Equal(cover.CoverId, state.CurrentCoverId);
+        }
+
+        [Fact]
+        public void ChooseCover_AdvancesNextShuffleAt_UsingEffectiveInterval()
+        {
+            _globalSettings = new CoverShuffleSettings { Interval = TimeSpan.FromHours(6) };
+            var gameId = Guid.NewGuid();
+            var cover = AddStoredCover(gameId);
+            var before = DateTime.UtcNow;
+
+            _service.ChooseCover(gameId, cover.CoverId);
+
+            var state = _repository.GetShuffleState(gameId);
+            Assert.InRange(state.NextShuffleAt.Value, before.AddHours(6).AddMinutes(-1), before.AddHours(6).AddMinutes(1));
+        }
+
+        [Fact]
+        public void ChooseCover_ForACoverNotInThePool_FailsWithoutChangingAnything()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            AddStoredCover(gameId);
+
+            var result = _service.ChooseCover(gameId, Guid.NewGuid());
+
+            Assert.False(result.Success);
+            Assert.Equal("original-cover.png", _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void ChooseCover_WithTheCoversFileMissing_FailsWithoutApplyingBrokenReference()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            var cover = AddStoredCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(cover.LocalPath));
+
+            var result = _service.ChooseCover(gameId, cover.CoverId);
+
+            Assert.False(result.Success);
+            Assert.Equal("original-cover.png", _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void ChooseCover_RemovesTheChosenCoverFromTheShuffleCycle_SoItIsNotImmediatelyRepeated()
+        {
+            var gameId = Guid.NewGuid();
+            var first = AddStoredCover(gameId);
+            var second = AddStoredCover(gameId);
+
+            // Prime a shuffle cycle so both covers are queued.
+            _service.ShuffleToNextCover(gameId);
+            var stateBeforeChoose = _repository.GetShuffleState(gameId);
+            var otherCover = stateBeforeChoose.CurrentCoverId == first.CoverId ? second : first;
+
+            Assert.Contains(otherCover.CoverId, stateBeforeChoose.ShuffleCycle);
+
+            _service.ChooseCover(gameId, otherCover.CoverId);
+
+            var stateAfterChoose = _repository.GetShuffleState(gameId);
+            Assert.DoesNotContain(otherCover.CoverId, stateAfterChoose.ShuffleCycle);
         }
     }
 }

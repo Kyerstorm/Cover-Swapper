@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using PluginCoverShuffle.Domain;
+using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using Xunit;
 
@@ -64,7 +65,7 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
             var repository = new CoverShuffleRepository(_databaseFilePath);
             var gameId = Guid.NewGuid();
 
-            repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new CoverShuffleSettings { Enabled = true } });
+            repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new GameSettingsOverride { Enabled = true } });
 
             var reloaded = new CoverShuffleRepository(_databaseFilePath);
             Assert.NotNull(reloaded.GetGameConfiguration(gameId));
@@ -155,7 +156,7 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
             var configuration = new GameConfiguration
             {
                 GameId = gameId,
-                SettingsOverride = new CoverShuffleSettings { Enabled = true }
+                SettingsOverride = new GameSettingsOverride { Enabled = true }
             };
 
             var repository = new CoverShuffleRepository(_databaseFilePath);
@@ -176,8 +177,8 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
             var repository = new CoverShuffleRepository(_databaseFilePath);
             var firstGameId = Guid.NewGuid();
             var secondGameId = Guid.NewGuid();
-            repository.SaveGameConfiguration(new GameConfiguration { GameId = firstGameId, SettingsOverride = new CoverShuffleSettings { Enabled = true } });
-            repository.SaveGameConfiguration(new GameConfiguration { GameId = secondGameId, SettingsOverride = new CoverShuffleSettings { Enabled = false } });
+            repository.SaveGameConfiguration(new GameConfiguration { GameId = firstGameId, SettingsOverride = new GameSettingsOverride { Enabled = true } });
+            repository.SaveGameConfiguration(new GameConfiguration { GameId = secondGameId, SettingsOverride = new GameSettingsOverride { Enabled = false } });
 
             var all = repository.GetAllGameConfigurations();
 
@@ -192,6 +193,73 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
             var repository = new CoverShuffleRepository(_databaseFilePath);
 
             Assert.Empty(repository.GetAllGameConfigurations());
+        }
+
+        [Fact]
+        public void GameConfiguration_WithPartialOverride_PreservesUnsetFieldsAsNullAcrossReload()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            repository.SaveGameConfiguration(new GameConfiguration
+            {
+                GameId = gameId,
+                SettingsOverride = new GameSettingsOverride { Interval = TimeSpan.FromHours(6) }
+            });
+
+            var reloaded = new CoverShuffleRepository(_databaseFilePath);
+            var loaded = reloaded.GetGameConfiguration(gameId);
+
+            Assert.Equal(TimeSpan.FromHours(6), loaded.SettingsOverride.Interval);
+            Assert.Null(loaded.SettingsOverride.Enabled);
+            Assert.Null(loaded.SettingsOverride.Mode);
+            Assert.Null(loaded.SettingsOverride.NotificationPreference);
+        }
+
+        [Fact]
+        public void Load_WithVersion1FullSnapshotOverride_MigratesToEquivalentExplicitOverrides()
+        {
+            Directory.CreateDirectory(_tempDirectory);
+            var gameId = Guid.NewGuid();
+
+            // Shape produced by the pre-migration code: every field in
+            // SettingsOverride has an explicit value (cloned from global at
+            // the time), plus the now-removed SteamGridDbApiKey.
+            var version1Json = @"{
+  ""SchemaVersion"": 1,
+  ""GameConfigurations"": [
+    {
+      ""GameId"": """ + gameId + @""",
+      ""SettingsOverride"": {
+        ""Enabled"": true,
+        ""Interval"": ""02:00:00"",
+        ""Mode"": ""Interval"",
+        ""AvoidConsecutiveDuplicates"": true,
+        ""ShuffleOnStartup"": true,
+        ""ShuffleOnGameLaunch"": false,
+        ""NotificationPreference"": ""NotifyOnShuffle"",
+        ""SteamGridDbApiKey"": ""should-be-ignored"",
+        ""NewGameBehavior"": ""DoNothing""
+      }
+    }
+  ],
+  ""Covers"": [],
+  ""ShuffleStates"": [],
+  ""OriginalArtworkRecords"": []
+}";
+            File.WriteAllText(_databaseFilePath, version1Json);
+
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            var loaded = repository.GetGameConfiguration(gameId);
+
+            Assert.NotNull(loaded);
+            Assert.True(loaded.SettingsOverride.Enabled);
+            Assert.Equal(TimeSpan.FromHours(2), loaded.SettingsOverride.Interval);
+            Assert.Equal(ShuffleMode.Interval, loaded.SettingsOverride.Mode);
+            Assert.True(loaded.SettingsOverride.AvoidConsecutiveDuplicates);
+            Assert.True(loaded.SettingsOverride.ShuffleOnStartup);
+            Assert.False(loaded.SettingsOverride.ShuffleOnGameLaunch);
+            Assert.Equal(NotificationPreference.NotifyOnShuffle, loaded.SettingsOverride.NotificationPreference);
+            Assert.Equal(NewGameBehavior.DoNothing, loaded.SettingsOverride.NewGameBehavior);
         }
 
         [Fact]
@@ -214,6 +282,55 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
 
             Assert.NotNull(state);
             Assert.Equal(coverId, state.CurrentCoverId);
+        }
+
+        [Fact]
+        public void ShuffleState_LastShuffleTrigger_RoundTripsAcrossReload()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            repository.SaveShuffleState(new ShuffleState
+            {
+                GameId = gameId,
+                CurrentCoverId = Guid.NewGuid(),
+                LastShuffleTrigger = ShuffleTrigger.Manual
+            });
+
+            var reloaded = new CoverShuffleRepository(_databaseFilePath);
+            var state = reloaded.GetShuffleState(gameId);
+
+            Assert.Equal(ShuffleTrigger.Manual, state.LastShuffleTrigger);
+        }
+
+        [Fact]
+        public void Load_WithVersion2ShuffleStateMissingLastShuffleTrigger_DefaultsToRandom()
+        {
+            Directory.CreateDirectory(_tempDirectory);
+            var gameId = Guid.NewGuid();
+            var coverId = Guid.NewGuid();
+
+            // Shape produced before LastShuffleTrigger existed: no such
+            // property on the ShuffleState record at all.
+            var version2Json = @"{
+  ""SchemaVersion"": 2,
+  ""GameConfigurations"": [],
+  ""Covers"": [],
+  ""ShuffleStates"": [
+    {
+      ""GameId"": """ + gameId + @""",
+      ""CurrentCoverId"": """ + coverId + @""",
+      ""ShuffleCycle"": []
+    }
+  ],
+  ""OriginalArtworkRecords"": []
+}";
+            File.WriteAllText(_databaseFilePath, version2Json);
+
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            var loaded = repository.GetShuffleState(gameId);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(ShuffleTrigger.Random, loaded.LastShuffleTrigger);
         }
 
         [Fact]

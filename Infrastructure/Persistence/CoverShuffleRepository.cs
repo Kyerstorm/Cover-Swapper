@@ -15,7 +15,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
     /// </summary>
     public class CoverShuffleRepository : ICoverShuffleRepository
     {
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 3;
 
         private readonly string _databaseFilePath;
         private readonly object _syncRoot = new object();
@@ -220,11 +220,30 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
                 return new PersistedDatabase();
             }
 
-            // Schema is currently at its initial version. This check is the
-            // extension point for future migrations (section 27): a newer
-            // file than this build understands must fail loudly rather than
-            // silently losing data, and older files must be upgraded here
-            // rather than discarded.
+            // This check is the extension point for future migrations
+            // (section 27): a newer file than this build understands must
+            // fail loudly rather than silently losing data, and older files
+            // must be upgraded here rather than discarded.
+            //
+            // Version 1 -> 2: GameConfiguration.SettingsOverride changed from
+            // a complete CoverShuffleSettings snapshot to a sparse
+            // GameSettingsOverride (every field nullable = "inherit global").
+            // No explicit data transform is needed: every version-1 override
+            // was created by cloning every global value at the time, so it
+            // already has an explicit value for every field; deserializing
+            // that JSON straight into the new nullable-field type preserves
+            // every value as an explicit override with identical effective
+            // behaviour, and the now-removed SteamGridDbApiKey property (a
+            // global-only credential that was never read back per-game) is
+            // silently ignored by the deserializer.
+            //
+            // Version 2 -> 3: ShuffleState gained LastShuffleTrigger, recording
+            // whether the current cover came from the randomized engine or a
+            // manual "Choose Cover" override. Older files have no such
+            // property, and deserializing that missing value into the new
+            // enum field defaults it to ShuffleTrigger.Random, which matches
+            // the actual historical behaviour (every prior shuffle was
+            // engine-selected), so no explicit transform is needed.
             if (database.SchemaVersion > CurrentSchemaVersion)
             {
                 throw new InvalidOperationException(

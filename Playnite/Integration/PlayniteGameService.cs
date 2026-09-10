@@ -43,6 +43,11 @@ namespace PluginCoverShuffle.Playnite.Integration
             return _api.Database.Games.Get(gameId)?.Name;
         }
 
+        public bool IsGameInstalled(Guid gameId)
+        {
+            return _api.Database.Games.Get(gameId)?.IsInstalled ?? false;
+        }
+
         public PlayniteGameArtwork GetArtwork(Guid gameId)
         {
             var game = _api.Database.Games.Get(gameId);

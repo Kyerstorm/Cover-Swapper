@@ -155,6 +155,51 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         }
 
         [Fact]
+        public void ShuffleIfDue_ForEnabledButNotInstalledGame_DoesNothing()
+        {
+            var service = new ScheduledShuffleService(_repository, _coverService, new FakeCoverShuffleLogger(), _gameService);
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+            _coverService.EnableCoverShuffle(gameId);
+            _gameService.SeedInstalled(gameId, false);
+
+            service.ShuffleIfDue(gameId);
+
+            Assert.Empty(_gameService.SetCoverReferenceCalls);
+        }
+
+        [Fact]
+        public void ShuffleIfDue_ForEnabledButNotInstalledGame_LeavesTheShuffleDueForWhenItsInstalled()
+        {
+            var service = new ScheduledShuffleService(_repository, _coverService, new FakeCoverShuffleLogger(), _gameService);
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+            _coverService.EnableCoverShuffle(gameId);
+            _gameService.SeedInstalled(gameId, false);
+            service.ShuffleIfDue(gameId);
+
+            _gameService.SeedInstalled(gameId, true);
+            service.ShuffleIfDue(gameId);
+
+            Assert.Single(_gameService.SetCoverReferenceCalls);
+        }
+
+        [Fact]
+        public void ShuffleIfDue_WhenNoGameServiceIsProvided_StillShufflesRegardlessOfInstallState()
+        {
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+            _coverService.EnableCoverShuffle(gameId);
+
+            // _service was constructed without a game service in the test
+            // fixture, matching most other tests in this file - the install
+            // check must not throw or block shuffling when it can't check.
+            _service.ShuffleIfDue(gameId);
+
+            Assert.Single(_gameService.SetCoverReferenceCalls);
+        }
+
+        [Fact]
         public void ShuffleIfDue_WithSilentPreference_NeverNotifiesEvenOnFailure()
         {
             _globalSettings = new CoverShuffleSettings { NotificationPreference = NotificationPreference.Silent };

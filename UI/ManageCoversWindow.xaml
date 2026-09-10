@@ -6,6 +6,7 @@
     <UserControl.Resources>
         <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
         <ui:StatusDotBrushConverter x:Key="StatusDotBrushConverter" />
+        <ui:InverseBoolConverter x:Key="InverseBoolConverter" />
 
         <!--
             Cover cards are a plain ItemsControl, not a ListBox: this panel
@@ -61,6 +62,9 @@
                     <TextBox x:Name="IntervalBox" Width="56" Padding="4,2" />
                     <Button Content="Apply" Margin="6,0,0,0" Padding="6,2" Click="ApplyIntervalButton_Click" />
                 </StackPanel>
+                <TextBlock Text="{Binding IntervalSourceText}" Opacity="0.6" Foreground="{DynamicResource TextBrush}" FontSize="10" Margin="0,4,0,0" />
+                <Button Content="Reset to Global Defaults" Margin="0,6,0,0" Padding="0,4" HorizontalAlignment="Left"
+                        IsEnabled="{Binding HasAnyOverride}" Click="ResetToGlobalDefaultsButton_Click" />
             </StackPanel>
         </Grid>
 
@@ -118,7 +122,9 @@
                                     <TextBlock Text="{Binding Source}" FontSize="11" Foreground="{DynamicResource TextBrush}" Margin="0,6,0,0" />
                                     <TextBlock Text="{Binding UsageCount, StringFormat='Used {0} time(s)'}" FontSize="11"
                                                Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
-                                    <Button Content="Remove" Margin="0,6,0,0" Padding="0,4" Click="RemoveButton_Click" Tag="{Binding CoverId}" />
+                                    <Button Content="Use This Cover" Margin="0,6,0,0" Padding="0,4" Click="UseThisCoverButton_Click"
+                                            Tag="{Binding CoverId}" IsEnabled="{Binding IsCurrent, Converter={StaticResource InverseBoolConverter}}" />
+                                    <Button Content="Remove" Margin="0,4,0,0" Padding="0,4" Click="RemoveButton_Click" Tag="{Binding CoverId}" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

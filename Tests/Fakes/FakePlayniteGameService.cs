@@ -12,6 +12,7 @@ namespace PluginCoverShuffle.Tests.Fakes
     {
         private readonly Dictionary<Guid, string> _coverReferences = new Dictionary<Guid, string>();
         private readonly Dictionary<Guid, string> _gameNames = new Dictionary<Guid, string>();
+        private readonly Dictionary<Guid, bool> _installedStates = new Dictionary<Guid, bool>();
 
         public List<(Guid GameId, string CoverReference)> SetCoverReferenceCalls { get; } = new List<(Guid, string)>();
 
@@ -47,6 +48,17 @@ namespace PluginCoverShuffle.Tests.Fakes
         public string GetGameName(Guid gameId)
         {
             return _gameNames.TryGetValue(gameId, out var name) ? name : null;
+        }
+
+        /// <summary>Games default to installed unless explicitly marked otherwise, matching most test scenarios.</summary>
+        public void SeedInstalled(Guid gameId, bool isInstalled)
+        {
+            _installedStates[gameId] = isInstalled;
+        }
+
+        public bool IsGameInstalled(Guid gameId)
+        {
+            return !_installedStates.TryGetValue(gameId, out var isInstalled) || isInstalled;
         }
     }
 }

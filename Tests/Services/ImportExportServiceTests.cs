@@ -61,7 +61,7 @@ namespace PluginCoverShuffle.Tests.Services
         public void Export_WritesCoverShuffleJson_AndCopiesCoverFiles()
         {
             var gameId = Guid.NewGuid();
-            _repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new CoverShuffleSettings { Enabled = true } });
+            _repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new GameSettingsOverride { Enabled = true } });
             AddStoredCover(gameId);
 
             var result = _service.Export(_exportDirectory);
@@ -75,7 +75,7 @@ namespace PluginCoverShuffle.Tests.Services
         public void Export_ThenImportIntoAFreshRepository_RestoresConfigurationAndCovers()
         {
             var gameId = Guid.NewGuid();
-            _repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new CoverShuffleSettings { Enabled = true } });
+            _repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new GameSettingsOverride { Enabled = true } });
             AddStoredCover(gameId);
             _service.Export(_exportDirectory);
 

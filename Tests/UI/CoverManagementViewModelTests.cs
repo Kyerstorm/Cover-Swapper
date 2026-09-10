@@ -50,11 +50,19 @@ namespace PluginCoverShuffle.Tests.UI
             }
         }
 
-        private Cover ImportCover(Guid gameId)
+        private Cover ImportCover(Guid gameId, System.Drawing.Color? fillColor = null)
         {
             var filePath = Path.Combine(_tempDirectory, Guid.NewGuid().ToString("N") + ".png");
             using (var bitmap = new Bitmap(4, 4))
             {
+                if (fillColor.HasValue)
+                {
+                    using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+                    {
+                        graphics.Clear(fillColor.Value);
+                    }
+                }
+
                 bitmap.Save(filePath, ImageFormat.Png);
             }
 
@@ -189,6 +197,53 @@ namespace PluginCoverShuffle.Tests.UI
 
             Assert.False(string.IsNullOrEmpty(viewModel.StatusMessage));
             Assert.NotEqual("Shuffled to a new cover.", viewModel.StatusMessage);
+        }
+
+        [Fact]
+        public void ChooseCover_AppliesTheSpecificCover_AndMarksItCurrent()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.ChooseCover(second.CoverId);
+
+            Assert.Equal("Cover applied.", viewModel.StatusMessage);
+            Assert.True(viewModel.Covers.Single(c => c.CoverId == second.CoverId).IsCurrent);
+            Assert.False(viewModel.Covers.Single(c => c.CoverId == first.CoverId).IsCurrent);
+        }
+
+        [Fact]
+        public void ChooseCover_ForACoverNotInThePool_ShowsTheFailureMessage()
+        {
+            var gameId = Guid.NewGuid();
+            ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.ChooseCover(Guid.NewGuid());
+
+            Assert.False(string.IsNullOrEmpty(viewModel.StatusMessage));
+            Assert.NotEqual("Cover applied.", viewModel.StatusMessage);
+        }
+
+        [Fact]
+        public void ResetToGlobalDefaults_ClearsOverrides_AndReflectsCurrentGlobalValues()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = false, Interval = TimeSpan.FromHours(24) };
+            var gameId = Guid.NewGuid();
+            var viewModel = CreateViewModel(gameId);
+            viewModel.ToggleEnabled();
+            viewModel.SetInterval(TimeSpan.FromHours(3));
+            Assert.True(viewModel.HasAnyOverride);
+            Assert.True(viewModel.IsIntervalOverridden);
+
+            viewModel.ResetToGlobalDefaults();
+
+            Assert.False(viewModel.IsEnabled);
+            Assert.Equal(24, viewModel.CurrentIntervalHours);
+            Assert.False(viewModel.HasAnyOverride);
+            Assert.False(viewModel.IsIntervalOverridden);
         }
 
         [Fact]

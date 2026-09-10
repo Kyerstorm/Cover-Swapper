@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PluginCoverShuffle.Domain.Shuffling;
 
 namespace PluginCoverShuffle.Domain
 {
@@ -26,5 +27,13 @@ namespace PluginCoverShuffle.Domain
         /// order they will be consumed. Emptied and rebuilt once fully consumed.
         /// </summary>
         public List<Guid> ShuffleCycle { get; set; } = new List<Guid>();
+
+        /// <summary>
+        /// Whether <see cref="CurrentCoverId"/> was selected by the randomized
+        /// engine or explicitly chosen by the user. Missing values from older
+        /// persisted data default to <see cref="ShuffleTrigger.Random"/>, which
+        /// matches the actual historical behaviour before this field existed.
+        /// </summary>
+        public ShuffleTrigger LastShuffleTrigger { get; set; } = ShuffleTrigger.Random;
     }
 }
