@@ -46,7 +46,7 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Providers.SteamGridDb
         }
 
         [Fact]
-        public async System.Threading.Tasks.Task SearchAsync_MapsGridsFromTheFirstMatchedGame()
+        public async System.Threading.Tasks.Task SearchAsync_WithASingleUnambiguousMatch_MapsGridsDirectly()
         {
             _client.SearchGamesResult = SteamGridDbResult<List<SteamGridDbGameMatch>>.Ok(new List<SteamGridDbGameMatch>
             {
@@ -60,11 +60,50 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Providers.SteamGridDb
             var result = await _provider.SearchAsync(new CoverSearchRequest { Query = "Cyberpunk 2077" });
 
             Assert.True(result.Success);
+            Assert.False(result.RequiresGameSelection);
             Assert.Single(result.Assets);
             Assert.Equal("7", result.Assets[0].SourceId);
             Assert.Equal("https://cdn/thumb.png", result.Assets[0].PreviewUrl);
             Assert.Equal("https://cdn/full.png", result.Assets[0].FullImageUrl);
             Assert.Null(result.Assets[0].FilePath);
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task SearchAsync_WithMultipleGameMatches_ReturnsGameMatchesInsteadOfGuessing()
+        {
+            _client.SearchGamesResult = SteamGridDbResult<List<SteamGridDbGameMatch>>.Ok(new List<SteamGridDbGameMatch>
+            {
+                new SteamGridDbGameMatch { Id = 1, Name = "Fallout" },
+                new SteamGridDbGameMatch { Id = 2, Name = "Fallout 2" },
+                new SteamGridDbGameMatch { Id = 3, Name = "Fallout 3" }
+            });
+
+            var result = await _provider.SearchAsync(new CoverSearchRequest { Query = "Fallout" });
+
+            Assert.True(result.Success);
+            Assert.True(result.RequiresGameSelection);
+            Assert.Empty(result.Assets);
+            Assert.Equal(3, result.GameMatches.Count);
+            Assert.Equal("1", result.GameMatches[0].ProviderGameId);
+            Assert.Equal("Fallout", result.GameMatches[0].Name);
+            Assert.Equal(0, _client.GetGridsCallCount);
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task SearchAsync_WithSelectedProviderGameId_FetchesGridsForThatGameDirectly()
+        {
+            _client.GetGridsResult = SteamGridDbResult<List<SteamGridDbGrid>>.Ok(new List<SteamGridDbGrid>
+            {
+                new SteamGridDbGrid { Id = 7, Url = "https://cdn/full.png", Thumb = "https://cdn/thumb.png" }
+            });
+
+            var result = await _provider.SearchAsync(new CoverSearchRequest { SelectedProviderGameId = "3", SelectedProviderGameName = "Fallout 3" });
+
+            Assert.True(result.Success);
+            Assert.False(result.RequiresGameSelection);
+            Assert.Single(result.Assets);
+            Assert.Equal(3, _client.LastGetGridsGameId);
+            Assert.Equal(0, _client.SearchGamesCallCount);
         }
 
         [Fact]

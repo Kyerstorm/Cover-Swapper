@@ -27,10 +27,18 @@ namespace PluginCoverShuffle.UI
 
         private static readonly string[] ViewStatePropertyNames =
         {
-            nameof(ShowLoading), nameof(ShowError), nameof(ShowEmpty), nameof(ShowResults)
+            nameof(ShowLoading), nameof(ShowError), nameof(ShowEmpty), nameof(ShowResults), nameof(ShowGameMatches)
         };
 
         public ObservableCollection<SteamGridDbResultItem> Results { get; } = new ObservableCollection<SteamGridDbResultItem>();
+
+        /// <summary>
+        /// Candidate games returned when a search query matched more than
+        /// one game on the provider (e.g. "Fallout"). Populated instead of
+        /// <see cref="Results"/> until the user picks one via
+        /// <see cref="SelectGameMatchAsync"/>.
+        /// </summary>
+        public ObservableCollection<CoverGameMatch> GameMatches { get; } = new ObservableCollection<CoverGameMatch>();
 
         /// <summary>The Playnite game this dialog was opened for; used only to prefill the search box.</summary>
         public string GameName { get; }
@@ -50,7 +58,7 @@ namespace PluginCoverShuffle.UI
         {
             get => _isSearching;
             set => SetValue(ref _isSearching, value,
-                new[] { nameof(IsSearching), nameof(IsBusy), nameof(CanAddSelected) }.Concat(ViewStatePropertyNames).ToArray());
+                new[] { nameof(IsSearching), nameof(IsBusy), nameof(CanAddSelected), nameof(CanSelectGameMatch) }.Concat(ViewStatePropertyNames).ToArray());
         }
 
         private bool _isAdding;
@@ -59,7 +67,7 @@ namespace PluginCoverShuffle.UI
         public bool IsAdding
         {
             get => _isAdding;
-            set => SetValue(ref _isAdding, value, nameof(IsAdding), nameof(IsBusy), nameof(CanAddSelected));
+            set => SetValue(ref _isAdding, value, nameof(IsAdding), nameof(IsBusy), nameof(CanAddSelected), nameof(CanSelectGameMatch));
         }
 
         /// <summary>True while any network/import operation is in flight.</summary>
@@ -82,6 +90,15 @@ namespace PluginCoverShuffle.UI
             set => SetValue(ref _hasResults, value, new[] { nameof(HasResults) }.Concat(ViewStatePropertyNames).ToArray());
         }
 
+        private bool _hasGameMatches;
+
+        /// <summary>True when the last search returned multiple candidate games awaiting disambiguation.</summary>
+        public bool HasGameMatches
+        {
+            get => _hasGameMatches;
+            set => SetValue(ref _hasGameMatches, value, new[] { nameof(HasGameMatches) }.Concat(ViewStatePropertyNames).ToArray());
+        }
+
         private string _errorMessage;
 
         /// <summary>Set when a search or add operation fails; null when there is no error to show.</summary>
@@ -98,10 +115,13 @@ namespace PluginCoverShuffle.UI
         public bool ShowError => !IsSearching && ErrorMessage != null;
 
         /// <summary>Shown after a search that returned zero covers.</summary>
-        public bool ShowEmpty => !IsSearching && ErrorMessage == null && HasSearched && !HasResults;
+        public bool ShowEmpty => !IsSearching && ErrorMessage == null && HasSearched && !HasResults && !HasGameMatches;
 
         /// <summary>Shown when there are covers to display.</summary>
-        public bool ShowResults => !IsSearching && ErrorMessage == null && HasResults;
+        public bool ShowResults => !IsSearching && ErrorMessage == null && HasResults && !HasGameMatches;
+
+        /// <summary>Shown when the search matched multiple games and the user must pick one before covers are shown.</summary>
+        public bool ShowGameMatches => !IsSearching && ErrorMessage == null && HasGameMatches;
 
         private string _statusMessage;
 
@@ -118,6 +138,14 @@ namespace PluginCoverShuffle.UI
         {
             get => _resultCountText;
             set => SetValue(ref _resultCountText, value);
+        }
+
+        private string _gameMatchCountText;
+
+        public string GameMatchCountText
+        {
+            get => _gameMatchCountText;
+            set => SetValue(ref _gameMatchCountText, value);
         }
 
         private bool _isAtCoverLimit;
@@ -142,6 +170,17 @@ namespace PluginCoverShuffle.UI
         public bool CanAddSelected => SelectedItem != null && !SelectedItem.AlreadyAdded && !IsBusy && !IsAtCoverLimit;
 
         public string SelectedCountText => $"Selected: {(SelectedItem == null ? 0 : 1)}";
+
+        private CoverGameMatch _selectedGameMatch;
+
+        public CoverGameMatch SelectedGameMatch
+        {
+            get => _selectedGameMatch;
+            set => SetValue(ref _selectedGameMatch, value, nameof(SelectedGameMatch), nameof(CanSelectGameMatch));
+        }
+
+        /// <summary>Whether "Select This Game" should be enabled.</summary>
+        public bool CanSelectGameMatch => SelectedGameMatch != null && !IsBusy;
 
         public SteamGridDbSearchViewModel(
             Guid gameId,
@@ -184,8 +223,11 @@ namespace PluginCoverShuffle.UI
             ErrorMessage = null;
             StatusMessage = null;
             HasResults = false;
+            HasGameMatches = false;
             SelectedItem = null;
+            SelectedGameMatch = null;
             Results.Clear();
+            GameMatches.Clear();
 
             try
             {
@@ -196,18 +238,19 @@ namespace PluginCoverShuffle.UI
                     return;
                 }
 
-                var existingSourceIds = new HashSet<string>(
-                    _repository.GetCovers(_gameId)
-                        .Where(c => c.Source == CoverSource.SteamGridDb && c.SourceId != null)
-                        .Select(c => c.SourceId));
-
-                foreach (var asset in searchResult.Assets)
+                if (searchResult.RequiresGameSelection)
                 {
-                    Results.Add(new SteamGridDbResultItem(asset, existingSourceIds.Contains(asset.SourceId)));
+                    foreach (var match in searchResult.GameMatches)
+                    {
+                        GameMatches.Add(match);
+                    }
+
+                    HasGameMatches = GameMatches.Count > 0;
+                    GameMatchCountText = GameMatches.Count == 1 ? "1 matching game" : $"{GameMatches.Count} matching games";
+                    return;
                 }
 
-                HasResults = Results.Count > 0;
-                ResultCountText = Results.Count == 1 ? "1 cover found" : $"{Results.Count} covers found";
+                PopulateResults(searchResult);
             }
             catch (Exception ex)
             {
@@ -220,6 +263,73 @@ namespace PluginCoverShuffle.UI
                 IsSearching = false;
                 RefreshCoverLimitState();
             }
+        }
+
+        /// <summary>
+        /// Fetches covers for one of the candidate games returned by a
+        /// prior ambiguous search, replacing the game-match list with the
+        /// resulting cover grid.
+        /// </summary>
+        public async Task SelectGameMatchAsync(CoverGameMatch match)
+        {
+            if (match == null || IsBusy)
+            {
+                return;
+            }
+
+            IsSearching = true;
+            ErrorMessage = null;
+            StatusMessage = null;
+            HasResults = false;
+            SelectedItem = null;
+            Results.Clear();
+
+            try
+            {
+                var searchResult = await _provider.SearchAsync(new CoverSearchRequest
+                {
+                    GameId = _gameId,
+                    Query = SearchQuery,
+                    SelectedProviderGameId = match.ProviderGameId,
+                    SelectedProviderGameName = match.Name
+                }).ConfigureAwait(true);
+
+                if (!searchResult.Success)
+                {
+                    ErrorMessage = searchResult.ErrorMessage;
+                    return;
+                }
+
+                HasGameMatches = false;
+                GameMatches.Clear();
+                PopulateResults(searchResult);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "SteamGridDB search failed unexpectedly.");
+                ErrorMessage = "Something went wrong searching SteamGridDB.";
+            }
+            finally
+            {
+                IsSearching = false;
+                RefreshCoverLimitState();
+            }
+        }
+
+        private void PopulateResults(CoverSearchResult searchResult)
+        {
+            var existingSourceIds = new HashSet<string>(
+                _repository.GetCovers(_gameId)
+                    .Where(c => c.Source == CoverSource.SteamGridDb && c.SourceId != null)
+                    .Select(c => c.SourceId));
+
+            foreach (var asset in searchResult.Assets)
+            {
+                Results.Add(new SteamGridDbResultItem(asset, existingSourceIds.Contains(asset.SourceId)));
+            }
+
+            HasResults = Results.Count > 0;
+            ResultCountText = Results.Count == 1 ? "1 cover found" : $"{Results.Count} covers found";
         }
 
         /// <summary>Downloads and imports whichever cover is currently selected.</summary>

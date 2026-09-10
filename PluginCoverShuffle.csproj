@@ -9,14 +9,23 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <UseWPF>true</UseWPF>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
     <Product>Cover Shuffle</Product>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PlayniteSDK" Version="6.16.0" />
+    <!--
+      Playnite loads every plugin into its own host process/AppDomain and
+      already provides Playnite.SDK.dll itself; a plugin must compile
+      against it but never ship or load its own copy, or a version mismatch
+      between the two could produce subtle type-identity failures at
+      runtime. ExcludeAssets="runtime" keeps it out of the build output
+      (and therefore out of DeployForPlaynite and the release package)
+      while still resolving it for compilation.
+    -->
+    <PackageReference Include="PlayniteSDK" Version="6.16.0" ExcludeAssets="runtime" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
@@ -58,6 +67,44 @@
     -->
     <Copy SourceFiles="@(_CoverShuffleDeployFiles)" DestinationFolder="$(MSBuildProjectDirectory)" SkipUnchangedFiles="false"
           Condition="Exists('%(_CoverShuffleDeployFiles.Identity)')" ContinueOnError="WarnAndContinue" />
+  </Target>
+
+  <PropertyGroup>
+    <CoverShufflePackageDir>$(MSBuildProjectDirectory)\bin\Package\</CoverShufflePackageDir>
+    <CoverShufflePackageStagingDir>$(CoverShufflePackageDir)staging\</CoverShufflePackageStagingDir>
+    <CoverShufflePextPath>$(CoverShufflePackageDir)CoverShuffle_$(Version).pext</CoverShufflePextPath>
+  </PropertyGroup>
+
+  <!--
+    Produces the distributable .pext (a plain zip) containing exactly what
+    Playnite needs to load the plugin: extension.yaml, the plugin DLL, and
+    its one runtime dependency Playnite doesn't already provide
+    (Newtonsoft.Json.dll). Deliberately excludes Playnite.SDK.dll (Playnite
+    supplies its own), the .pdb (debug symbols aren't needed to run), and
+    everything under Tests/. Run with: dotnet build -c Release -t:PackageExtension
+  -->
+  <Target Name="PackageExtension" DependsOnTargets="Build">
+    <Error Condition="'$(Configuration)' != 'Release'"
+           Text="PackageExtension must be run against the Release configuration: dotnet build -c Release -t:PackageExtension" />
+
+    <RemoveDir Directories="$(CoverShufflePackageStagingDir)" Condition="Exists('$(CoverShufflePackageStagingDir)')" />
+    <MakeDir Directories="$(CoverShufflePackageStagingDir)" />
+
+    <ItemGroup>
+      <_CoverShufflePackageFiles Include="$(MSBuildProjectDirectory)\extension.yaml" />
+      <_CoverShufflePackageFiles Include="$(OutputPath)PluginCoverShuffle.dll" />
+      <_CoverShufflePackageFiles Include="$(OutputPath)Newtonsoft.Json.dll" />
+    </ItemGroup>
+
+    <Error Condition="!Exists('%(_CoverShufflePackageFiles.Identity)')"
+           Text="Required package file missing: %(_CoverShufflePackageFiles.Identity). Build the Release configuration first." />
+
+    <Copy SourceFiles="@(_CoverShufflePackageFiles)" DestinationFolder="$(CoverShufflePackageStagingDir)" />
+
+    <Delete Files="$(CoverShufflePextPath)" Condition="Exists('$(CoverShufflePextPath)')" />
+    <ZipDirectory SourceDirectory="$(CoverShufflePackageStagingDir)" DestinationFile="$(CoverShufflePextPath)" />
+
+    <Message Importance="high" Text="Packaged Cover Shuffle $(Version) to $(CoverShufflePextPath)" />
   </Target>
 
 </Project>

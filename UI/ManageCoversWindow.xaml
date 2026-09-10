@@ -1,34 +1,130 @@
-<Window x:Class="PluginCoverShuffle.UI.ManageCoversWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
-        Title="Manage Covers" Height="420" Width="380" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
+<UserControl x:Class="PluginCoverShuffle.UI.ManageCoversWindow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
+             MinWidth="560" MinHeight="480">
+    <UserControl.Resources>
         <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-    </Window.Resources>
-    <DockPanel Margin="10">
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-            <TextBlock Text="Covers for this game" FontWeight="Bold" />
-            <TextBlock Text="{Binding CoverCountText, StringFormat=' ({0})'}" Opacity="0.7" />
+        <ui:StatusDotBrushConverter x:Key="StatusDotBrushConverter" />
+
+        <!--
+            Cover cards are a plain ItemsControl, not a ListBox: this panel
+            has no click-to-select behavior (only a per-card Remove button),
+            so there is no ListBoxItem chrome to fight for text contrast.
+        -->
+        <Style x:Key="CoverCardBorderStyle" TargetType="Border">
+            <Setter Property="Width" Value="150" />
+            <Setter Property="Margin" Value="0,0,12,12" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel Margin="16" LastChildFill="True">
+
+        <!-- Header -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <TextBlock Text="{Binding GameName}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" />
+            <TextBlock Text="Cover Shuffle" Opacity="0.7" Foreground="{DynamicResource TextBrush}" Margin="0,2,0,0" />
+            <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource TextBrush}" Opacity="0.15" />
         </StackPanel>
-        <TextBlock DockPanel.Dock="Top" Text="No covers yet. Use &quot;Add Cover&quot; from the game's right-click menu."
-                   TextWrapping="Wrap" Opacity="0.7" Margin="0,10,0,0"
-                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
-        <ListBox ItemsSource="{Binding Covers}">
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
-                        <Image Source="{Binding AbsoluteImagePath}" Width="60" Height="90" Stretch="Uniform" />
-                        <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Source}" FontWeight="Bold" />
-                            <TextBlock Text="{Binding AddedAt, StringFormat='Added: {0:g}'}" />
-                            <TextBlock Text="{Binding UsageCount, StringFormat='Used {0} time(s)'}" />
-                            <Button Content="Remove" Width="80" HorizontalAlignment="Left" Margin="0,4,0,0"
-                                    Click="RemoveButton_Click" Tag="{Binding CoverId}" />
-                        </StackPanel>
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+
+        <!-- Status / scheduling / interval -->
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Status" Opacity="0.7" Foreground="{DynamicResource TextBrush}" FontSize="11" />
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,6,0"
+                             Fill="{Binding IsEnabled, Converter={StaticResource StatusDotBrushConverter}}" />
+                    <TextBlock Text="{Binding StatusText}" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" />
+                </StackPanel>
+                <Button x:Name="ToggleEnabledButton" Content="{Binding ToggleEnabledButtonText}" Width="90"
+                        HorizontalAlignment="Left" Margin="0,6,0,0" Padding="0,4" Click="ToggleEnabledButton_Click" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="Next shuffle" Opacity="0.7" Foreground="{DynamicResource TextBrush}" FontSize="11" />
+                <TextBlock Text="{Binding NextShuffleText}" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Interval (hours)" Opacity="0.7" Foreground="{DynamicResource TextBrush}" FontSize="11" />
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBox x:Name="IntervalBox" Width="56" Padding="4,2" />
+                    <Button Content="Apply" Margin="6,0,0,0" Padding="6,2" Click="ApplyIntervalButton_Click" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- Add Cover / Shuffle actions -->
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource TextBrush}" Opacity="0.15" />
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button x:Name="AddSteamGridDbButton" Content="+ SteamGridDB" Padding="8,5" Margin="0,0,8,0" Click="AddSteamGridDbButton_Click" />
+                <Button x:Name="AddLocalFileButton" Content="+ Local File" Padding="8,5" Margin="0,0,8,0" Click="AddLocalFileButton_Click" />
+                <Button x:Name="AddPlayniteMetadataButton" Content="+ Playnite" Padding="8,5" Click="AddPlayniteMetadataButton_Click" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Shuffle Now" Padding="10,6" Margin="0,0,8,0" Click="ShuffleNowButton_Click" />
+                <Button Content="Restore Original" Padding="10,6" IsEnabled="{Binding HasSavedOriginal}" Click="RestoreOriginalButton_Click" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding StatusMessage}" Opacity="0.8" Margin="0,8,0,0" Foreground="{DynamicResource TextBrush}"
+                       Visibility="{Binding StatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+        </StackPanel>
+
+        <!-- Covers -->
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                <TextBlock Text="Covers" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Text="{Binding CoverCountText, StringFormat=' ({0})'}" Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
+            </StackPanel>
+
+            <TextBlock DockPanel.Dock="Top" Text="No covers yet. Use one of the &quot;Add Cover&quot; buttons below to get started."
+                       TextWrapping="Wrap" Opacity="0.7" Foreground="{DynamicResource TextBrush}" Margin="0,10,0,0"
+                       Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Covers}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource CoverCardBorderStyle}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Image Source="{Binding AbsoluteImagePath}" Width="130" Height="180" Stretch="Uniform" />
+                                        <Border Width="26" Height="26" CornerRadius="13" Background="{DynamicResource TextBrush}"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
+                                                Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVisibilityConverter}}">
+                                            <TextBlock Text="&#10003;" FontWeight="Bold" FontSize="14"
+                                                       Foreground="{DynamicResource TextBrushDark}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="{Binding Source}" FontSize="11" Foreground="{DynamicResource TextBrush}" Margin="0,6,0,0" />
+                                    <TextBlock Text="{Binding UsageCount, StringFormat='Used {0} time(s)'}" FontSize="11"
+                                               Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
+                                    <Button Content="Remove" Margin="0,6,0,0" Padding="0,4" Click="RemoveButton_Click" Tag="{Binding CoverId}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </DockPanel>
     </DockPanel>
-</Window>
+</UserControl>

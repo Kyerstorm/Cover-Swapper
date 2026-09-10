@@ -15,5 +15,8 @@ namespace PluginCoverShuffle.UI
         public DateTime AddedAt { get; set; }
 
         public int UsageCount { get; set; }
+
+        /// <summary>Whether this is the cover currently applied as the game's Playnite cover.</summary>
+        public bool IsCurrent { get; set; }
     }
 }

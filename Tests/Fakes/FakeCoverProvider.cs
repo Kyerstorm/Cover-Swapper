@@ -15,7 +15,13 @@ namespace PluginCoverShuffle.Tests.Fakes
 
         public int DownloadCallCount { get; private set; }
 
-        public Task<CoverSearchResult> SearchAsync(CoverSearchRequest request) => Task.FromResult(SearchResult);
+        public CoverSearchRequest LastSearchRequest { get; private set; }
+
+        public Task<CoverSearchResult> SearchAsync(CoverSearchRequest request)
+        {
+            LastSearchRequest = request;
+            return Task.FromResult(SearchResult);
+        }
 
         public Task<CoverDownloadResult> DownloadAsync(CoverAsset asset)
         {

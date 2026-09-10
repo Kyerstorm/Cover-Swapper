@@ -12,6 +12,17 @@ namespace PluginCoverShuffle.Domain.Providers
 
         public List<CoverAsset> Assets { get; set; } = new List<CoverAsset>();
 
+        /// <summary>
+        /// True when the search query matched more than one game and the
+        /// provider needs the caller to disambiguate via
+        /// <see cref="CoverGameMatch"/> before it will return covers. When
+        /// true, <see cref="Assets"/> is empty and <see cref="GameMatches"/>
+        /// holds the candidates.
+        /// </summary>
+        public bool RequiresGameSelection { get; set; }
+
+        public List<CoverGameMatch> GameMatches { get; set; } = new List<CoverGameMatch>();
+
         public static CoverSearchResult Succeeded(params CoverAsset[] assets)
         {
             return new CoverSearchResult { Success = true, Assets = new List<CoverAsset>(assets) };
@@ -20,6 +31,11 @@ namespace PluginCoverShuffle.Domain.Providers
         public static CoverSearchResult Failed(string errorMessage)
         {
             return new CoverSearchResult { Success = false, ErrorMessage = errorMessage };
+        }
+
+        public static CoverSearchResult NeedsGameSelection(IEnumerable<CoverGameMatch> matches)
+        {
+            return new CoverSearchResult { Success = true, RequiresGameSelection = true, GameMatches = new List<CoverGameMatch>(matches) };
         }
     }
 }

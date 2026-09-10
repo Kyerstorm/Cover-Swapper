@@ -38,6 +38,16 @@ namespace PluginCoverShuffle.Infrastructure.Providers.SteamGridDb
                 throw new ArgumentNullException(nameof(request));
             }
 
+            if (!string.IsNullOrWhiteSpace(request.SelectedProviderGameId))
+            {
+                if (!int.TryParse(request.SelectedProviderGameId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var selectedGameId))
+                {
+                    return CoverSearchResult.Failed("Invalid SteamGridDB game reference.");
+                }
+
+                return await SearchGridsForGameAsync(selectedGameId, request.SelectedProviderGameName).ConfigureAwait(false);
+            }
+
             if (string.IsNullOrWhiteSpace(request.Query))
             {
                 return CoverSearchResult.Failed("Enter a game name to search SteamGridDB.");
@@ -54,8 +64,25 @@ namespace PluginCoverShuffle.Infrastructure.Providers.SteamGridDb
                 return CoverSearchResult.Failed($"No SteamGridDB matches found for \"{request.Query}\".");
             }
 
+            // A single match is unambiguous; anything more (e.g. "Fallout"
+            // matching Fallout, Fallout 2, Fallout 3, ...) must never be
+            // silently resolved by picking the first result — let the
+            // caller ask the user which game they meant.
+            if (gameSearch.Value.Count > 1)
+            {
+                var matches = gameSearch.Value
+                    .Select(game => new CoverGameMatch { ProviderGameId = game.Id.ToString(CultureInfo.InvariantCulture), Name = game.Name })
+                    .ToList();
+                return CoverSearchResult.NeedsGameSelection(matches);
+            }
+
             var matchedGame = gameSearch.Value[0];
-            var gridsResult = await _client.GetGridsForGameAsync(matchedGame.Id, CancellationToken.None).ConfigureAwait(false);
+            return await SearchGridsForGameAsync(matchedGame.Id, matchedGame.Name).ConfigureAwait(false);
+        }
+
+        private async Task<CoverSearchResult> SearchGridsForGameAsync(int gameId, string gameName)
+        {
+            var gridsResult = await _client.GetGridsForGameAsync(gameId, CancellationToken.None).ConfigureAwait(false);
             if (!gridsResult.Success)
             {
                 return CoverSearchResult.Failed(DescribeError(gridsResult.ErrorKind, gridsResult.ErrorMessage));
@@ -73,7 +100,8 @@ namespace PluginCoverShuffle.Infrastructure.Providers.SteamGridDb
 
             if (assets.Length == 0)
             {
-                return CoverSearchResult.Failed($"No cover art found on SteamGridDB for \"{matchedGame.Name}\".");
+                var forGame = string.IsNullOrWhiteSpace(gameName) ? "the selected game" : $"\"{gameName}\"";
+                return CoverSearchResult.Failed($"No cover art found on SteamGridDB for {forGame}.");
             }
 
             return CoverSearchResult.Succeeded(assets);

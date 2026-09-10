@@ -9,10 +9,12 @@ using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Domain.Providers;
+using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Logging;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Providers;
 using PluginCoverShuffle.Infrastructure.Providers.SteamGridDb;
+using PluginCoverShuffle.Infrastructure.Randomization;
 using PluginCoverShuffle.Infrastructure.Storage;
 using PluginCoverShuffle.Playnite.Integration;
 using PluginCoverShuffle.Services;
@@ -68,6 +70,9 @@ namespace PluginCoverShuffle
         /// <summary>Reacts to newly installed games not yet known to Cover Shuffle.</summary>
         internal GameInstallationService GameInstallationService { get; private set; }
 
+        /// <summary>Shuffles a game's cover right before it launches, for games with that option enabled.</summary>
+        internal GameLaunchShuffleService GameLaunchShuffleService { get; private set; }
+
         /// <summary>Lists every game Cover Shuffle manages, for the Cover Shuffle Manager window.</summary>
         internal CoverShuffleManager Manager { get; private set; }
 
@@ -103,7 +108,8 @@ namespace PluginCoverShuffle
 
                 var gameService = new PlayniteGameService(api);
                 GameService = gameService;
-                CoverService = new PlayniteCoverService(Repository, gameService, Storage, GetGlobalSettings, _logger);
+                var shuffleEngine = new ShuffleEngine(new SystemRandomShuffleRandomizer());
+                CoverService = new PlayniteCoverService(Repository, gameService, Storage, GetGlobalSettings, _logger, shuffleEngine);
                 ImportService = new CoverImportService(Repository, Storage, _logger);
 
                 var steamGridDbClient = new SteamGridDbClient(_httpClient, GetSteamGridDbApiKey, _logger);
@@ -112,14 +118,16 @@ namespace PluginCoverShuffle
 
                 PlayniteMetadataProvider = new PlayniteMetadataCoverProvider(gameService);
 
-                ScheduledShuffleService = new ScheduledShuffleService(Repository, CoverService, _logger);
+                var notificationService = new CoverShuffleNotificationService(api.Notifications);
+                ScheduledShuffleService = new ScheduledShuffleService(Repository, CoverService, _logger, gameService, notificationService);
                 StartupShuffleService = new StartupShuffleService(Repository, ScheduledShuffleService, GetGlobalSettings, _logger);
 
-                var newGameConfigurationService = new NewGameConfigurationService(CoverService, GetGlobalSettings, api.Dialogs, _logger);
+                var newGameConfigurationService = new NewGameConfigurationService(CoverService, PlayniteMetadataProvider, ImportService, GetGlobalSettings, api.Dialogs, _logger);
                 GameInstallationService = new GameInstallationService(Repository, newGameConfigurationService, _logger);
+                GameLaunchShuffleService = new GameLaunchShuffleService(CoverService, _logger, gameService, notificationService);
 
                 Manager = new CoverShuffleManager(Repository, CoverService, gameService);
-                BulkConfigurationService = new BulkConfigurationService(CoverService, Repository, _logger);
+                BulkConfigurationService = new BulkConfigurationService(CoverService, _logger);
                 ImportExportService = new ImportExportService(Repository, Storage, _logger);
                 MaintenanceService = new MaintenanceService(Repository, Storage, layout, _logger);
             }
@@ -129,7 +137,7 @@ namespace PluginCoverShuffle
             }
 
             _menuFactory = new CoverShuffleGameMenuFactory(
-                CoverService, ImportService, SteamGridDbProvider, PlayniteMetadataProvider, Repository, Storage, api.Dialogs, _logger, GameService);
+                CoverService, ImportService, SteamGridDbProvider, PlayniteMetadataProvider, Repository, Storage, api.Dialogs, _logger, GameService, BulkConfigurationService);
         }
 
         private CoverShuffleSettings GetGlobalSettings() => LoadPluginSettings<CoverShuffleSettings>();
@@ -215,6 +223,21 @@ namespace PluginCoverShuffle
             }
 
             GameInstallationService.HandleGameInstalled(args.Game.Id, args.Game.Name);
+        }
+
+        public override void OnGameStarting(OnGameStartingEventArgs args)
+        {
+            if (GameLaunchShuffleService == null || args?.Game == null)
+            {
+                return;
+            }
+
+            var gameId = args.Game.Id;
+
+            // Off the UI thread: this fires synchronously as part of
+            // launching the game, and a shuffle is pure file/JSON I/O that
+            // must never be what makes "Play" feel slow.
+            Task.Run(() => GameLaunchShuffleService.HandleGameStarting(gameId));
         }
 
         public override ISettings GetSettings(bool firstRunSettings)

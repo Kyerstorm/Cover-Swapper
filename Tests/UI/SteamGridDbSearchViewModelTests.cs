@@ -155,6 +155,52 @@ namespace PluginCoverShuffle.Tests.UI
         }
 
         [Fact]
+        public async Task SearchAsync_WhenProviderReturnsMultipleGameMatches_ShowsGameMatchesInsteadOfCovers()
+        {
+            var viewModel = CreateViewModel();
+            _provider.SearchResult = CoverSearchResult.NeedsGameSelection(new[]
+            {
+                new CoverGameMatch { ProviderGameId = "1", Name = "Fallout" },
+                new CoverGameMatch { ProviderGameId = "3", Name = "Fallout 3" }
+            });
+            viewModel.SearchQuery = "Fallout";
+
+            await viewModel.SearchAsync();
+
+            Assert.True(viewModel.ShowGameMatches);
+            Assert.False(viewModel.ShowResults);
+            Assert.False(viewModel.ShowEmpty);
+            Assert.Equal(2, viewModel.GameMatches.Count);
+            Assert.Empty(viewModel.Results);
+        }
+
+        [Fact]
+        public async Task SelectGameMatchAsync_FetchesCoversForThatGame_AndClearsGameMatches()
+        {
+            var viewModel = CreateViewModel();
+            _provider.SearchResult = CoverSearchResult.NeedsGameSelection(new[]
+            {
+                new CoverGameMatch { ProviderGameId = "1", Name = "Fallout" },
+                new CoverGameMatch { ProviderGameId = "3", Name = "Fallout 3" }
+            });
+            viewModel.SearchQuery = "Fallout";
+            await viewModel.SearchAsync();
+            var chosen = viewModel.GameMatches.Single(m => m.ProviderGameId == "3");
+
+            _provider.SearchResult = CoverSearchResult.Succeeded(
+                new CoverAsset { Source = CoverSource.SteamGridDb, SourceId = "99", PreviewUrl = "https://cdn/99.png" });
+
+            await viewModel.SelectGameMatchAsync(chosen);
+
+            Assert.False(viewModel.ShowGameMatches);
+            Assert.True(viewModel.ShowResults);
+            Assert.Empty(viewModel.GameMatches);
+            Assert.Single(viewModel.Results);
+            Assert.Equal("3", _provider.LastSearchRequest.SelectedProviderGameId);
+            Assert.Equal("Fallout 3", _provider.LastSearchRequest.SelectedProviderGameName);
+        }
+
+        [Fact]
         public async Task SearchAsync_WhenProviderFails_ShowsErrorState()
         {
             var viewModel = CreateViewModel();

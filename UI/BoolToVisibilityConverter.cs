@@ -10,13 +10,26 @@ namespace PluginCoverShuffle.UI
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            var flag = value is bool b && b;
+            var flag = IsTruthy(value);
             if (string.Equals(parameter as string, "Invert", StringComparison.OrdinalIgnoreCase))
             {
                 flag = !flag;
             }
 
             return flag ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static bool IsTruthy(object value)
+        {
+            switch (value)
+            {
+                case bool b:
+                    return b;
+                case string s:
+                    return !string.IsNullOrEmpty(s);
+                default:
+                    return value != null;
+            }
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

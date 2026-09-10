@@ -1,8 +1,8 @@
 # Cover Shuffle
 
 A Playnite extension that lets you keep a small pool of alternate cover
-artworks per game (up to 10) and rotate through them automatically, or
-on demand.
+artworks per game (up to 10) and rotate through them automatically, or on
+demand — without a custom Playnite theme.
 
 ## Features
 
@@ -11,16 +11,30 @@ on demand.
   - [SteamGridDB](https://www.steamgriddb.com/) (requires a free API key), or
   - artwork Playnite already has for the game (its cover, background, and icon) —
     works without any API key.
+- **Randomized, no-immediate-repeat shuffling** — each shuffle draws from a
+  randomized cycle of the game's enabled covers; every cover is shown once
+  before the cycle reshuffles, and the first cover of a new cycle is never
+  the same as the last cover of the old one (when more than one cover is
+  available).
 - **Safe artwork ownership** — the game's original cover is captured the first
   time Cover Shuffle takes control of a game, and can always be restored.
   Removing a cover from the pool never deletes the underlying file.
 - **Scheduled shuffling** — each game has its own shuffle interval (or
   inherits the global default). A due shuffle is applied once when Playnite
   starts; Playnite being closed for a while never causes a pile-up of missed
-  shuffles.
+  shuffles. A cover whose file has gone missing is skipped rather than
+  applied, so a manually deleted file never leaves a broken cover behind.
+- **Shuffle on game launch** — optionally rotate a game's cover the moment
+  you launch it, per game or globally. Uses the same schedule as interval
+  shuffling, so launching a game also resets its next scheduled shuffle
+  rather than running on a second, separate clock.
 - **New-game automation** — choose whether newly installed games are left
-  alone, prompted about, or automatically prepared for Cover Shuffle. This
-  never contacts SteamGridDB on its own.
+  alone, prompted about, or automatically prepared for Cover Shuffle.
+  "Automatic" pulls in the game's existing Playnite cover art so it has
+  something to shuffle right away, and never contacts SteamGridDB on its own.
+- **Notifications** — optionally surface scheduled shuffle activity (success,
+  or failure) as a Playnite notification. Configurable per game or globally:
+  silent, errors only, or every shuffle.
 - **Cover Shuffle Manager** — a searchable list of every game Cover Shuffle
   manages, with bulk enable/disable/interval actions and configuration
   import/export.
@@ -28,7 +42,69 @@ on demand.
   went missing, and cached provider images; nothing is deleted without an
   explicit, confirmed action.
 
-## Using it
+## Installation
+
+1. Download the `.pext` package (see [Development](#development) if you're
+   building it yourself).
+2. Double-click it with Playnite running — Playnite will prompt to install
+   it — or use **Add-on menu → Extensions → Install from file** in Playnite.
+3. Restart Playnite when prompted.
+
+No configuration is required to start using local files or Playnite's own
+artwork as covers. SteamGridDB is optional — see below.
+
+**Upgrading:** installing a newer version over an existing one preserves all
+saved configuration, covers, and shuffle state; nothing needs to be
+reconfigured. Cover Shuffle's data lives entirely in its own storage folder
+under Playnite's extension data directory, separate from Playnite's own
+library data, so upgrading or reinstalling the plugin never touches your
+games or their original artwork.
+
+## Configuration
+
+Open Playnite's **Add-on menu → Extensions → Cover Shuffle** (or find it in
+Playnite's settings under Extensions) to set the defaults every game follows
+unless it has its own override:
+
+| Setting | What it controls |
+|---|---|
+| Enable Cover Shuffle | Default enabled state for newly-configured games |
+| Avoid consecutive duplicate covers | Never repeat the currently-showing cover on a shuffle |
+| Shuffle on Playnite startup | Apply a due shuffle once when Playnite starts |
+| Shuffle on game launch | Also shuffle the cover the moment you launch a game |
+| Shuffle interval (hours) | Default time between shuffles |
+| New game behavior | Do nothing / Ask / Automatic — see [Usage](#usage) |
+| Notifications | Silent / Errors only / Every shuffle |
+| SteamGridDB API key | Optional — see below |
+
+Any game can override its enabled state or interval individually from its
+**Manage Covers** window without touching these global defaults; a game's
+first override is seeded from whatever the global defaults are at that
+moment, so giving one game its own interval doesn't reset anything else
+about it.
+
+Settings are validated when you close the settings page — an interval under
+one minute is rejected with an explanation rather than silently accepted or
+crashing the plugin.
+
+## SteamGridDB setup
+
+SteamGridDB is entirely optional. Local files and Playnite's own artwork
+work with no setup at all; only the **Add Cover → SteamGridDB** menu action
+needs it.
+
+1. Create a free account at [steamgriddb.com](https://www.steamgriddb.com/).
+2. Generate an API key at
+   [steamgriddb.com/profile/preferences/api](https://www.steamgriddb.com/profile/preferences/api).
+3. Paste it into Cover Shuffle's settings → **API key**, then click
+   **Validate** to confirm it's accepted before relying on it.
+
+The key is never logged, never shown in an error message, and never stored
+anywhere outside Playnite's own settings storage. If a search matches more
+than one game (e.g. searching "Fallout"), you'll be asked which one you
+meant before covers are shown — nothing is guessed silently.
+
+## Usage
 
 Right-click a game in Playnite → **Cover Shuffle**:
 
@@ -39,43 +115,121 @@ Right-click a game in Playnite → **Cover Shuffle**:
 | Add Cover → SteamGridDB | Search and browse SteamGridDB covers visually |
 | Add Cover → Playnite Metadata | Pull in the game's existing cover/background/icon |
 | Shuffle Now | Immediately advances to the next cover in the pool |
-| Manage Covers | View and remove covers from the pool |
+| Manage Covers | View covers, current status, and next shuffle time; remove covers from the pool |
 | Restore Original Cover | Puts the game's original cover back |
 
 The main Playnite menu has a **Cover Shuffle Manager...** entry for managing
-many games at once (search, bulk enable/disable/interval, import/export,
-maintenance).
+many games at once: search, bulk enable/disable/interval, configuration
+import/export, and maintenance (see below).
 
-Global defaults — shuffle interval, shuffle-on-startup, new-game behavior,
-and the SteamGridDB API key — are in the plugin's own settings page.
+### New-game automation
 
-## Importing/exporting configuration
+Set in Cover Shuffle's settings under **New game behavior**:
 
-The Manager's Export button writes a `CoverShuffle.json` file plus the
-referenced cover images into a folder you choose. Import reads that same
+- **Do nothing** — newly installed games are left alone.
+- **Ask** — you're prompted whether to enable Cover Shuffle for it.
+- **Automatic** — Cover Shuffle enables itself for the game and pulls in
+  whatever cover art Playnite already has locally, so the game has
+  something to shuffle right away. This never queries SteamGridDB on its
+  own; that always requires you to explicitly use **Add Cover → SteamGridDB**.
+
+A game is only ever treated as "new" once — reinstalling a game Cover
+Shuffle has already seen (even one you later disabled) does not reapply
+this behavior.
+
+### Importing/exporting configuration
+
+The Manager's **Export** button writes a `CoverShuffle.json` file plus the
+referenced cover images into a folder you choose. **Import** reads that same
 folder back in. This is meant for restoring your configuration on another
 Playnite installation that shares the same library (e.g. a synced library on
 a new PC) — Playnite's own game IDs need to match for the restored
 configuration to line up with the right games.
 
+### Maintenance
+
+From the Cover Shuffle Manager, **Maintenance** scans for:
+
+- cover files on disk no longer referenced by any cover record (orphans),
+- cover records whose file is missing from disk, and
+- cached SteamGridDB images.
+
+The scan itself never changes anything; each cleanup action requires you to
+review the findings and confirm it separately.
+
+## Troubleshooting
+
+**A game's cover isn't shuffling.**
+Check its **Manage Covers** window: it shows whether Cover Shuffle is
+enabled for that game, how many covers it has, and when the next shuffle is
+due. A game needs at least one enabled cover and to be enabled itself.
+
+**"This game has no covers configured yet."**
+Add at least one cover via the game's **Add Cover** submenu before
+shuffling — scheduled shuffles skip games with an empty pool rather than
+failing loudly, but "Shuffle Now" will show you this message directly.
+
+**"None of this game's covers could be found on disk."**
+One or more cover files were deleted or moved outside the plugin (manually,
+by another tool, antivirus quarantine, etc.). Open **Manage Covers** or run
+**Maintenance** from the Cover Shuffle Manager to find and clean up the
+affected records; the plugin never applies a reference to a file it can't
+find, so you'll see this message instead of a broken cover image.
+
+**"SteamGridDB API key is not configured." / "...rejected the configured
+API key."**
+Add or fix the key in Cover Shuffle's settings, then use the **Validate**
+button to confirm SteamGridDB accepts it before searching again.
+
+**"Could not reach SteamGridDB."**
+A network problem (offline, DNS, firewall, SteamGridDB itself being down).
+Everything that doesn't require SteamGridDB — local files, Playnite
+metadata, shuffling already-added covers, enable/disable, restore — keeps
+working normally while it's unreachable.
+
+**A cover I added doesn't look right / the file seems corrupted.**
+Cover Shuffle validates that a file is a real, decodable image before
+adding it to the pool; an invalid file is rejected up front with a clear
+message rather than being stored and failing later.
+
+**The plugin's database file looks corrupted or Cover Shuffle lost its
+configuration after a crash.**
+Cover Shuffle never lets a corrupt data file crash the plugin. If its
+database can't be parsed, the original file is preserved next to itself
+(named with a `.corrupt-<timestamp>` suffix) for manual recovery, and the
+plugin starts fresh rather than losing the ability to load at all.
+
+**Something else looks wrong.**
+Check Playnite's own extension log (`extensions.log` in the Playnite
+folder) for lines starting with `PluginCoverShuffle#CoverShufflePlugin` —
+Cover Shuffle logs warnings and errors there rather than showing raw
+exceptions to you.
+
 ## Known limitations
 
-- Shuffling picks the next cover in the pool by add order; it is not yet the
-  full randomized-cycle-with-no-immediate-repeat algorithm.
-- A due shuffle is applied at Playnite startup only — a game left running for
-  days past its interval shuffles at the next restart, not mid-session.
-- Only the first SteamGridDB search result for a game name is used; there is
-  no UI to disambiguate an ambiguous name.
+- Outside of launching a game, a due shuffle is applied at Playnite startup
+  only — a game left running for days past its interval, without being
+  relaunched, shuffles at the next restart rather than mid-session.
 - The Playnite Metadata provider only picks up artwork already downloaded to
   a local file, not a bare remote URL some library plugins store instead.
+- Configuration import/export is intended for the same Playnite library
+  (matching game IDs); it does not remap covers to a different library.
 
 ## Development
 
 - Target framework: `net462` (matches Playnite's own runtime).
-- Build: `dotnet build PluginCoverShuffle.csproj` (the build also copies the
-  DLL next to `extension.yaml`, where Playnite expects it, and to
-  `bin/<Configuration>/`).
+- Build: `dotnet build PluginCoverShuffle.csproj` (also copies the DLL next
+  to `extension.yaml`, where Playnite expects it, and to
+  `bin/<Configuration>/`). `Playnite.SDK.dll` is deliberately excluded from
+  the build output — Playnite provides it at runtime.
+- Package a release: `dotnet build PluginCoverShuffle.csproj -c Release -t:PackageExtension`
+  produces `bin/Package/CoverShuffle_<version>.pext` containing exactly
+  `extension.yaml`, `PluginCoverShuffle.dll`, and `Newtonsoft.Json.dll` — no
+  debug symbols, no Playnite SDK assembly, nothing from `Tests/`.
 - Tests: `dotnet test Tests/PluginCoverShuffle.Tests.csproj` — all tests run
   against fakes; none require a live Playnite installation, network access,
   or a SteamGridDB API key.
+- Versioning: bump `<Version>`/`<AssemblyVersion>`/`<FileVersion>` in
+  `PluginCoverShuffle.csproj` and `Version` in `extension.yaml` together —
+  they must always match.
 - See `CLAUDE.md` for the engineering ruleset this project was built against.

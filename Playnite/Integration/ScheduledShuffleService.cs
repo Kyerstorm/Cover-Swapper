@@ -14,15 +14,21 @@ namespace PluginCoverShuffle.Playnite.Integration
         private readonly ICoverShuffleRepository _repository;
         private readonly PlayniteCoverService _coverService;
         private readonly ICoverShuffleLogger _logger;
+        private readonly IPlayniteGameService _gameService;
+        private readonly CoverShuffleNotificationService _notificationService;
 
         public ScheduledShuffleService(
             ICoverShuffleRepository repository,
             PlayniteCoverService coverService,
-            ICoverShuffleLogger logger)
+            ICoverShuffleLogger logger,
+            IPlayniteGameService gameService = null,
+            CoverShuffleNotificationService notificationService = null)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _coverService = coverService ?? throw new ArgumentNullException(nameof(coverService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _gameService = gameService;
+            _notificationService = notificationService;
         }
 
         /// <summary>
@@ -46,10 +52,17 @@ namespace PluginCoverShuffle.Playnite.Integration
             }
 
             var result = _coverService.ShuffleToNextCover(gameId);
+            var gameName = _gameService?.GetGameName(gameId) ?? gameId.ToString();
+            var preference = _coverService.GetEffectiveNotificationPreference(gameId);
+
             if (!result.Success)
             {
                 _logger.Debug($"Scheduled shuffle skipped for game '{gameId}': {result.Message}");
+                _notificationService?.NotifyShuffleFailed(gameId, gameName, result.Message, preference);
+                return;
             }
+
+            _notificationService?.NotifyShuffled(gameId, gameName, preference);
         }
     }
 }

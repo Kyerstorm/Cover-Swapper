@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using PluginCoverShuffle.Domain;
+using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Storage;
 using PluginCoverShuffle.Playnite.Integration;
@@ -17,6 +18,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         private readonly FakePlayniteGameService _gameService;
         private readonly PlayniteCoverService _service;
         private CoverShuffleSettings _globalSettings = new CoverShuffleSettings();
+        private IShuffleEngine _shuffleEngine = new ShuffleEngine(new FakeShuffleRandomizer());
 
         public PlayniteCoverServiceTests()
         {
@@ -27,7 +29,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             layout.EnsureDirectoriesExist();
             _storage = new CoverStorage(layout);
             _gameService = new FakePlayniteGameService();
-            _service = new PlayniteCoverService(_repository, _gameService, _storage, () => _globalSettings, new FakeCoverShuffleLogger());
+            _service = new PlayniteCoverService(_repository, _gameService, _storage, () => _globalSettings, new FakeCoverShuffleLogger(), _shuffleEngine);
         }
 
         public void Dispose()
@@ -242,6 +244,68 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
 
             var state = _repository.GetShuffleState(gameId);
             Assert.InRange(state.NextShuffleAt.Value, before.AddHours(2).AddMinutes(-1), before.AddHours(2).AddMinutes(1));
+        }
+
+        [Fact]
+        public void ShuffleToNextCover_WithOneCoverAndItsFileDeleted_FailsWithoutApplyingBrokenReference()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            var cover = AddStoredCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(cover.LocalPath));
+
+            var result = _service.ShuffleToNextCover(gameId);
+
+            Assert.False(result.Success);
+            Assert.Equal("original-cover.png", _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void EnableCoverShuffle_ForGameWithNoOverrideYet_SeedsOverrideFromCurrentGlobalSettings()
+        {
+            _globalSettings = new CoverShuffleSettings
+            {
+                Interval = TimeSpan.FromHours(3),
+                NotificationPreference = NotificationPreference.Silent
+            };
+            var gameId = Guid.NewGuid();
+
+            _service.EnableCoverShuffle(gameId);
+
+            // Enabling must not silently reset unrelated settings (interval,
+            // notification preference, ...) back to type defaults for a game
+            // that never had its own override before.
+            Assert.Equal(TimeSpan.FromHours(3), _service.GetEffectiveInterval(gameId));
+            Assert.Equal(NotificationPreference.Silent, _service.GetEffectiveNotificationPreference(gameId));
+        }
+
+        [Fact]
+        public void SetIntervalOverride_ForGameWithNoOverrideYet_DoesNotDisableIt()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+
+            _service.SetIntervalOverride(gameId, TimeSpan.FromHours(5));
+
+            // A game following the global "enabled" default must not become
+            // disabled just because a bulk action gave it its own interval.
+            Assert.True(_service.IsEnabled(gameId));
+            Assert.Equal(TimeSpan.FromHours(5), _service.GetEffectiveInterval(gameId));
+        }
+
+        [Fact]
+        public void ShuffleToNextCover_WithOneCoverFileMissingAndAnotherPresent_SkipsMissingAndAppliesTheOther()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            var missing = AddStoredCover(gameId);
+            var present = AddStoredCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(missing.LocalPath));
+
+            var result = _service.ShuffleToNextCover(gameId);
+
+            Assert.True(result.Success);
+            Assert.Equal(_storage.GetAbsolutePath(present.LocalPath), _gameService.GetCoverReference(gameId));
         }
     }
 }

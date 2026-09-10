@@ -11,19 +11,18 @@ using Xunit;
 
 namespace PluginCoverShuffle.Tests.Playnite.Integration
 {
-    public class ScheduledShuffleServiceTests : IDisposable
+    public class GameLaunchShuffleServiceTests : IDisposable
     {
         private readonly string _tempDirectory;
         private readonly ICoverShuffleRepository _repository;
         private readonly ICoverStorage _storage;
         private readonly FakePlayniteGameService _gameService;
         private readonly PlayniteCoverService _coverService;
-        private readonly ScheduledShuffleService _service;
         private CoverShuffleSettings _globalSettings = new CoverShuffleSettings();
 
-        public ScheduledShuffleServiceTests()
+        public GameLaunchShuffleServiceTests()
         {
-            _tempDirectory = Path.Combine(Path.GetTempPath(), "ScheduledShuffleServiceTests_" + Guid.NewGuid().ToString("N"));
+            _tempDirectory = Path.Combine(Path.GetTempPath(), "GameLaunchShuffleServiceTests_" + Guid.NewGuid().ToString("N"));
             var databaseFilePath = Path.Combine(_tempDirectory, "coverShuffle.db.json");
             _repository = new CoverShuffleRepository(databaseFilePath);
             var layout = new CoverStorageLayout(Path.Combine(_tempDirectory, "storage"));
@@ -31,7 +30,6 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             _storage = new CoverStorage(layout);
             _gameService = new FakePlayniteGameService();
             _coverService = new PlayniteCoverService(_repository, _gameService, _storage, () => _globalSettings, new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
-            _service = new ScheduledShuffleService(_repository, _coverService, new FakeCoverShuffleLogger());
         }
 
         public void Dispose()
@@ -41,6 +39,9 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
                 Directory.Delete(_tempDirectory, recursive: true);
             }
         }
+
+        private GameLaunchShuffleService NewService(CoverShuffleNotificationService notificationService = null) =>
+            new GameLaunchShuffleService(_coverService, new FakeCoverShuffleLogger(), _gameService, notificationService);
 
         private Cover AddStoredCover(Guid gameId)
         {
@@ -63,110 +64,69 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         }
 
         [Fact]
-        public void ShuffleIfDue_ForDisabledGame_DoesNothing()
+        public void HandleGameStarting_WithShuffleOnLaunchDisabled_DoesNothing()
         {
             var gameId = Guid.NewGuid();
             AddStoredCover(gameId);
+            _coverService.EnableCoverShuffle(gameId);
 
-            _service.ShuffleIfDue(gameId);
+            NewService().HandleGameStarting(gameId);
 
             Assert.Empty(_gameService.SetCoverReferenceCalls);
         }
 
         [Fact]
-        public void ShuffleIfDue_ForEnabledGameWithNoShuffleStateYet_ShufflesImmediately()
+        public void HandleGameStarting_WithShuffleOnLaunchEnabled_ShufflesTheCover()
         {
+            _globalSettings = new CoverShuffleSettings { ShuffleOnGameLaunch = true };
             var gameId = Guid.NewGuid();
             AddStoredCover(gameId);
             _coverService.EnableCoverShuffle(gameId);
 
-            _service.ShuffleIfDue(gameId);
+            NewService().HandleGameStarting(gameId);
 
             Assert.Single(_gameService.SetCoverReferenceCalls);
         }
 
         [Fact]
-        public void ShuffleIfDue_WhenNextShuffleIsInTheFuture_DoesNothing()
+        public void HandleGameStarting_ForDisabledGame_DoesNothingEvenWithShuffleOnLaunchEnabled()
         {
+            _globalSettings = new CoverShuffleSettings { ShuffleOnGameLaunch = true };
             var gameId = Guid.NewGuid();
             AddStoredCover(gameId);
-            _coverService.EnableCoverShuffle(gameId);
-            _service.ShuffleIfDue(gameId);
-            _gameService.SetCoverReferenceCalls.Clear();
 
-            _service.ShuffleIfDue(gameId);
+            NewService().HandleGameStarting(gameId);
 
             Assert.Empty(_gameService.SetCoverReferenceCalls);
         }
 
         [Fact]
-        public void ShuffleIfDue_WhenNextShuffleIsInThePast_ShufflesOnceOnly()
+        public void HandleGameStarting_WithNoCovers_DoesNotThrow()
         {
+            _globalSettings = new CoverShuffleSettings { ShuffleOnGameLaunch = true };
             var gameId = Guid.NewGuid();
-            AddStoredCover(gameId);
-            AddStoredCover(gameId);
             _coverService.EnableCoverShuffle(gameId);
-            _repository.SaveShuffleState(new ShuffleState
-            {
-                GameId = gameId,
-                NextShuffleAt = DateTime.UtcNow.AddDays(-10)
-            });
 
-            _service.ShuffleIfDue(gameId);
-            _service.ShuffleIfDue(gameId);
+            var exception = Record.Exception(() => NewService().HandleGameStarting(gameId));
 
-            // First call shuffles and advances the schedule into the future;
-            // the second call must not shuffle again immediately after.
-            Assert.Single(_gameService.SetCoverReferenceCalls);
+            Assert.Null(exception);
         }
 
         [Fact]
-        public void ShuffleIfDue_WithSuccessfulShuffle_NotifiesUsingEffectivePreference()
+        public void HandleGameStarting_WithSuccessfulShuffle_Notifies()
         {
+            _globalSettings = new CoverShuffleSettings { ShuffleOnGameLaunch = true };
             var notifications = new FakeNotificationsApi();
             var notificationService = new CoverShuffleNotificationService(notifications);
-            var service = new ScheduledShuffleService(_repository, _coverService, new FakeCoverShuffleLogger(), _gameService, notificationService);
             var gameId = Guid.NewGuid();
             _gameService.SeedGameName(gameId, "Some Game");
             AddStoredCover(gameId);
             _coverService.EnableCoverShuffle(gameId);
 
-            service.ShuffleIfDue(gameId);
+            NewService(notificationService).HandleGameStarting(gameId);
 
             Assert.Single(notifications.AddedMessages);
             Assert.Equal(NotificationType.Info, notifications.AddedMessages[0].Type);
-            Assert.Contains("Some Game", notifications.AddedMessages[0].Text);
-        }
-
-        [Fact]
-        public void ShuffleIfDue_WithFailedShuffle_NotifiesAnError()
-        {
-            var notifications = new FakeNotificationsApi();
-            var notificationService = new CoverShuffleNotificationService(notifications);
-            var service = new ScheduledShuffleService(_repository, _coverService, new FakeCoverShuffleLogger(), _gameService, notificationService);
-            var gameId = Guid.NewGuid();
-            _gameService.SeedGameName(gameId, "Empty Pool Game");
-            _coverService.EnableCoverShuffle(gameId);
-
-            service.ShuffleIfDue(gameId);
-
-            Assert.Single(notifications.AddedMessages);
-            Assert.Equal(NotificationType.Error, notifications.AddedMessages[0].Type);
-        }
-
-        [Fact]
-        public void ShuffleIfDue_WithSilentPreference_NeverNotifiesEvenOnFailure()
-        {
-            _globalSettings = new CoverShuffleSettings { NotificationPreference = NotificationPreference.Silent };
-            var notifications = new FakeNotificationsApi();
-            var notificationService = new CoverShuffleNotificationService(notifications);
-            var service = new ScheduledShuffleService(_repository, _coverService, new FakeCoverShuffleLogger(), _gameService, notificationService);
-            var gameId = Guid.NewGuid();
-            _coverService.EnableCoverShuffle(gameId);
-
-            service.ShuffleIfDue(gameId);
-
-            Assert.Empty(notifications.AddedMessages);
         }
     }
 }

@@ -18,5 +18,15 @@ namespace PluginCoverShuffle.Domain.Providers
 
         /// <summary>A file path already chosen by the user, for local-file import.</summary>
         public string LocalFilePath { get; set; }
+
+        /// <summary>
+        /// When set, skips a provider's name-search disambiguation and fetches
+        /// covers directly for this specific game, as returned by a previous
+        /// search's <see cref="CoverSearchResult.GameMatches"/>.
+        /// </summary>
+        public string SelectedProviderGameId { get; set; }
+
+        /// <summary>Display name of <see cref="SelectedProviderGameId"/>, for user-facing messages only.</summary>
+        public string SelectedProviderGameName { get; set; }
     }
 }

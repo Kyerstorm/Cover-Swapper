@@ -85,6 +85,41 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!--
+            Game-match rows use a fully custom template for the same reason
+            as CoverCardStyle above: Playnite's default ListBoxItem template
+            forces its own foreground/selection colors that read as
+            near-invisible dark-on-dark text against this dialog's
+            background, so nothing here can rely on inherited defaults.
+        -->
+        <Style x:Key="GameMatchCardStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="RowBorder" BorderThickness="1" CornerRadius="4" Padding="10,8"
+                                BorderBrush="{DynamicResource TextBrush}" Background="Transparent">
+                            <TextBlock x:Name="RowText" Text="{Binding Name}" FontSize="14" Foreground="{DynamicResource TextBrush}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="RowBorder" Property="Background" Value="{DynamicResource TextBrush}" />
+                                <Setter TargetName="RowBorder" Property="Opacity" Value="0.9" />
+                                <Setter TargetName="RowText" Property="Foreground" Value="{DynamicResource TextBrushDark}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RowBorder" Property="Background" Value="{DynamicResource TextBrush}" />
+                                <Setter TargetName="RowBorder" Property="Opacity" Value="0.10" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <DockPanel Margin="16" LastChildFill="True">
@@ -105,6 +140,10 @@
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <TextBlock Text="{Binding ResultCountText}" Opacity="0.75"
                        Visibility="{Binding ShowResults, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Text="{Binding GameMatchCountText}" Opacity="0.75"
+                       Visibility="{Binding ShowGameMatches, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock Text="SteamGridDB matched more than one game. Pick the one you meant:" Margin="0,2,0,0"
+                       Visibility="{Binding ShowGameMatches, Converter={StaticResource BoolToVisibilityConverter}}" />
             <TextBlock Text="{Binding CoverLimitMessage}" FontWeight="Bold" Margin="0,2,0,0"
                        Visibility="{Binding IsAtCoverLimit, Converter={StaticResource BoolToVisibilityConverter}}" />
         </StackPanel>
@@ -114,12 +153,17 @@
             <Border DockPanel.Dock="Top" Height="1" Margin="0,0,0,10" Background="{DynamicResource TextBrush}" Opacity="0.15" />
             <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Opacity="0.8" Margin="0,8,0,0"
                        Visibility="{Binding StatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
-            <TextBlock Text="{Binding SelectedCountText}" VerticalAlignment="Center" Opacity="0.85" />
+            <TextBlock Text="{Binding SelectedCountText}" VerticalAlignment="Center" Opacity="0.85"
+                       Visibility="{Binding ShowResults, Converter={StaticResource BoolToVisibilityConverter}}" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="CancelButton" Content="Cancel" Width="90" Padding="0,6" IsCancel="True"
                         Click="CancelButton_Click" />
                 <Button x:Name="AddSelectedButton" Content="Add Selected Cover" Width="160" Margin="8,0,0,0" Padding="0,6"
-                        Click="AddSelectedButton_Click" IsEnabled="{Binding CanAddSelected}" />
+                        Click="AddSelectedButton_Click" IsEnabled="{Binding CanAddSelected}"
+                        Visibility="{Binding ShowGameMatches, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                <Button x:Name="SelectGameMatchButton" Content="Select This Game" Width="160" Margin="8,0,0,0" Padding="0,6"
+                        Click="SelectGameMatchButton_Click" IsEnabled="{Binding CanSelectGameMatch}"
+                        Visibility="{Binding ShowGameMatches, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
         </DockPanel>
 
@@ -158,6 +202,17 @@
                         </ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
                 </ListBox>
+            </ScrollViewer>
+
+            <!-- Game disambiguation: shown when the search query matched more than one game. -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding ShowGameMatches, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ListBox x:Name="GameMatchesList" ItemsSource="{Binding GameMatches}"
+                         SelectedItem="{Binding SelectedGameMatch, Mode=TwoWay}"
+                         SelectionMode="Single"
+                         Background="Transparent" BorderThickness="0"
+                         ItemContainerStyle="{StaticResource GameMatchCardStyle}"
+                         MouseDoubleClick="GameMatchesList_MouseDoubleClick" />
             </ScrollViewer>
         </Grid>
     </DockPanel>

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using PluginCoverShuffle.Domain;
+using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Storage;
 using PluginCoverShuffle.Playnite.Integration;
@@ -32,9 +33,9 @@ namespace PluginCoverShuffle.Tests.UI
             var layout = new CoverStorageLayout(Path.Combine(_tempDirectory, "storage"));
             layout.EnsureDirectoriesExist();
             var storage = new CoverStorage(layout);
-            _coverService = new PlayniteCoverService(_repository, _gameService, storage, () => new CoverShuffleSettings(), new FakeCoverShuffleLogger());
+            _coverService = new PlayniteCoverService(_repository, _gameService, storage, () => new CoverShuffleSettings(), new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
             _manager = new CoverShuffleManager(_repository, _coverService, _gameService);
-            _bulkService = new BulkConfigurationService(_coverService, _repository, new FakeCoverShuffleLogger());
+            _bulkService = new BulkConfigurationService(_coverService, new FakeCoverShuffleLogger());
             _importExportService = new ImportExportService(_repository, storage, new FakeCoverShuffleLogger());
             _viewModel = new CoverShuffleManagerViewModel(_manager, _bulkService, _importExportService, _dialogs);
         }

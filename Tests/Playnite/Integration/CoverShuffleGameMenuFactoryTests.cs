@@ -6,6 +6,7 @@ using Playnite.SDK.Models;
 using Playnite.SDK.Plugins;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Domain.Providers;
+using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Storage;
 using PluginCoverShuffle.Playnite.Integration;
@@ -37,7 +38,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             layout.EnsureDirectoriesExist();
             _storage = new CoverStorage(layout);
             _gameService = new FakePlayniteGameService();
-            _coverService = new PlayniteCoverService(_repository, _gameService, _storage, () => new CoverShuffleSettings(), new FakeCoverShuffleLogger());
+            _coverService = new PlayniteCoverService(_repository, _gameService, _storage, () => new CoverShuffleSettings(), new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
             _importService = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger());
             _steamGridDbProvider = new FakeCoverProvider { Source = CoverSource.SteamGridDb };
             _playniteMetadataProvider = new FakeCoverProvider { Source = CoverSource.PlayniteMetadata };

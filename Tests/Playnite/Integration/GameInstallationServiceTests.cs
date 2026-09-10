@@ -1,9 +1,11 @@
 using System;
 using System.IO;
 using PluginCoverShuffle.Domain;
+using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Storage;
 using PluginCoverShuffle.Playnite.Integration;
+using PluginCoverShuffle.Services;
 using PluginCoverShuffle.Tests.Fakes;
 using Xunit;
 
@@ -15,6 +17,8 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         private readonly ICoverShuffleRepository _repository;
         private readonly FakePlayniteGameService _gameService;
         private readonly PlayniteCoverService _coverService;
+        private readonly CoverImportService _importService;
+        private readonly FakeCoverProvider _playniteMetadataProvider = new FakeCoverProvider { Source = CoverSource.PlayniteMetadata };
         private readonly FakeDialogsFactory _dialogs = new FakeDialogsFactory();
         private CoverShuffleSettings _globalSettings = new CoverShuffleSettings { NewGameBehavior = NewGameBehavior.Automatic };
 
@@ -27,7 +31,8 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             layout.EnsureDirectoriesExist();
             var storage = new CoverStorage(layout);
             _gameService = new FakePlayniteGameService();
-            _coverService = new PlayniteCoverService(_repository, _gameService, storage, () => _globalSettings, new FakeCoverShuffleLogger());
+            _coverService = new PlayniteCoverService(_repository, _gameService, storage, () => _globalSettings, new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
+            _importService = new CoverImportService(_repository, storage, new FakeCoverShuffleLogger());
         }
 
         public void Dispose()
@@ -40,7 +45,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
 
         private GameInstallationService NewService()
         {
-            var newGameConfigurationService = new NewGameConfigurationService(_coverService, () => _globalSettings, _dialogs, new FakeCoverShuffleLogger());
+            var newGameConfigurationService = new NewGameConfigurationService(_coverService, _playniteMetadataProvider, _importService, () => _globalSettings, _dialogs, new FakeCoverShuffleLogger());
             return new GameInstallationService(_repository, newGameConfigurationService, new FakeCoverShuffleLogger());
         }
 
@@ -75,6 +80,8 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             var gameId = Guid.NewGuid();
             var throwingService = new NewGameConfigurationService(
                 _coverService,
+                _playniteMetadataProvider,
+                _importService,
                 () => throw new InvalidOperationException("boom"),
                 _dialogs,
                 new FakeCoverShuffleLogger());

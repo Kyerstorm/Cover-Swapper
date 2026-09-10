@@ -7,7 +7,6 @@ using Playnite.SDK.Plugins;
 using PluginCoverShuffle.Domain.Providers;
 using PluginCoverShuffle.Infrastructure.Logging;
 using PluginCoverShuffle.Infrastructure.Persistence;
-using PluginCoverShuffle.Infrastructure.Providers;
 using PluginCoverShuffle.Infrastructure.Storage;
 using PluginCoverShuffle.Services;
 using PluginCoverShuffle.UI;
@@ -32,7 +31,8 @@ namespace PluginCoverShuffle.Playnite.Integration
         private readonly IDialogsFactory _dialogs;
         private readonly ICoverShuffleLogger _logger;
         private readonly IPlayniteGameService _gameService;
-        private readonly LocalFileCoverProvider _localFileCoverProvider = new LocalFileCoverProvider();
+        private readonly BulkConfigurationService _bulkConfigurationService;
+        private readonly LocalFileCoverAddService _localFileCoverAddService;
 
         public CoverShuffleGameMenuFactory(
             PlayniteCoverService coverService,
@@ -43,7 +43,8 @@ namespace PluginCoverShuffle.Playnite.Integration
             ICoverStorage storage,
             IDialogsFactory dialogs,
             ICoverShuffleLogger logger,
-            IPlayniteGameService gameService = null)
+            IPlayniteGameService gameService = null,
+            BulkConfigurationService bulkConfigurationService = null)
         {
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -57,6 +58,8 @@ namespace PluginCoverShuffle.Playnite.Integration
             _repository = repository;
             _storage = storage;
             _gameService = gameService;
+            _bulkConfigurationService = bulkConfigurationService;
+            _localFileCoverAddService = importService != null ? new LocalFileCoverAddService(importService) : null;
         }
 
         public IEnumerable<GameMenuItem> BuildMenuItems(List<Game> games)
@@ -167,8 +170,17 @@ namespace PluginCoverShuffle.Playnite.Integration
                 MenuSection = MenuSectionName,
                 Action = args => ForEachGame(args, id =>
                 {
-                    var viewModel = new CoverManagementViewModel(id, _repository, _storage);
-                    new ManageCoversWindow(viewModel).ShowDialog();
+                    var gameName = _gameService?.GetGameName(id);
+                    var viewModel = new CoverManagementViewModel(id, gameName, _repository, _storage, _coverService, _bulkConfigurationService);
+                    ManageCoversWindow.ShowDialog(
+                        _dialogs,
+                        viewModel,
+                        _repository,
+                        _steamGridDbProvider,
+                        _playniteMetadataProvider,
+                        _importService,
+                        _localFileCoverAddService,
+                        _logger);
                 })
             });
 
@@ -193,37 +205,10 @@ namespace PluginCoverShuffle.Playnite.Integration
                 return;
             }
 
-            // Local files need no async network wait, so it's safe to block
-            // synchronously here rather than round-trip through a window.
-            var searchResult = _localFileCoverProvider.SearchAsync(new CoverSearchRequest
+            var errorMessage = _localFileCoverAddService.AddFromFile(gameId, filePath);
+            if (errorMessage != null)
             {
-                GameId = gameId,
-                LocalFilePath = filePath
-            }).GetAwaiter().GetResult();
-
-            if (!searchResult.Success || searchResult.Assets.Count == 0)
-            {
-                _dialogs.ShowMessage(searchResult.ErrorMessage ?? "Could not read the selected file.");
-                return;
-            }
-
-            var downloadResult = _localFileCoverProvider.DownloadAsync(searchResult.Assets[0]).GetAwaiter().GetResult();
-            if (!downloadResult.Success)
-            {
-                _dialogs.ShowMessage(downloadResult.ErrorMessage);
-                return;
-            }
-
-            var importResult = _importService.Import(gameId, new CoverAsset
-            {
-                Source = searchResult.Assets[0].Source,
-                SourceId = searchResult.Assets[0].SourceId,
-                FilePath = downloadResult.LocalFilePath
-            });
-
-            if (!importResult.IsSuccess)
-            {
-                _dialogs.ShowMessage(importResult.Message);
+                _dialogs.ShowMessage(errorMessage);
             }
         }
 

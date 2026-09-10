@@ -21,13 +21,22 @@ namespace PluginCoverShuffle.Tests.Fakes
 
         public int DownloadImageCallCount { get; private set; }
 
+        public int SearchGamesCallCount { get; private set; }
+
+        public int GetGridsCallCount { get; private set; }
+
+        public int LastGetGridsGameId { get; private set; }
+
         public Task<SteamGridDbResult<List<SteamGridDbGameMatch>>> SearchGamesAsync(string query, CancellationToken cancellationToken)
         {
+            SearchGamesCallCount++;
             return Task.FromResult(SearchGamesResult);
         }
 
         public Task<SteamGridDbResult<List<SteamGridDbGrid>>> GetGridsForGameAsync(int gameId, CancellationToken cancellationToken)
         {
+            GetGridsCallCount++;
+            LastGetGridsGameId = gameId;
             return Task.FromResult(GetGridsResult);
         }
 

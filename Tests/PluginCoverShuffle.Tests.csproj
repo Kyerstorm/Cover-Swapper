@@ -9,6 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The main project excludes Playnite.SDK.dll from its own output
+      (Playnite supplies that assembly at runtime; see PluginCoverShuffle.csproj),
+      so it isn't copied here via the ProjectReference either. The test host
+      still needs the real assembly on disk to run anything that touches
+      Playnite.SDK types (fakes implementing its interfaces, etc.).
+    -->
+    <PackageReference Include="PlayniteSDK" Version="6.16.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />

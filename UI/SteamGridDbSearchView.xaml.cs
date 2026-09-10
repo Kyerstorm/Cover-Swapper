@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Playnite.SDK;
+using PluginCoverShuffle.Domain.Providers;
 
 namespace PluginCoverShuffle.UI
 {
@@ -105,6 +106,19 @@ namespace PluginCoverShuffle.UI
             if ((sender as ListBox)?.SelectedItem is SteamGridDbResultItem item)
             {
                 await _viewModel.AddAsync(item);
+            }
+        }
+
+        private async void SelectGameMatchButton_Click(object sender, RoutedEventArgs e)
+        {
+            await _viewModel.SelectGameMatchAsync(_viewModel.SelectedGameMatch);
+        }
+
+        private async void GameMatchesList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if ((sender as ListBox)?.SelectedItem is CoverGameMatch match)
+            {
+                await _viewModel.SelectGameMatchAsync(match);
             }
         }
 
