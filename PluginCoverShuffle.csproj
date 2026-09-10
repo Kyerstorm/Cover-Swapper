@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <AssemblyName>PluginCoverShuffle</AssemblyName>
+    <RootNamespace>PluginCoverShuffle</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <UseWPF>true</UseWPF>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>Cover Shuffle</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PlayniteSDK" Version="6.16.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="extension.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Tests/ is a separate test project; exclude its sources from this project's default globs. -->
+  <ItemGroup>
+    <Compile Remove="Tests/**" />
+    <EmbeddedResource Remove="Tests/**" />
+    <None Remove="Tests/**" />
+    <Page Remove="Tests/**" />
+  </ItemGroup>
+
+  <!--
+    Playnite loads a plugin's Module (extension.yaml) relative to the folder
+    containing extension.yaml itself, not from bin/<Configuration>/. Without
+    this the plugin fails to load with a FileNotFoundException as soon as
+    Playnite tries to load PluginCoverShuffle.dll.
+  -->
+  <Target Name="DeployForPlaynite" AfterTargets="Build">
+    <ItemGroup>
+      <_CoverShuffleDeployFiles Include="$(OutputPath)PluginCoverShuffle.dll" />
+      <_CoverShuffleDeployFiles Include="$(OutputPath)PluginCoverShuffle.pdb" />
+      <_CoverShuffleDeployFiles Include="$(OutputPath)Newtonsoft.Json.dll" />
+    </ItemGroup>
+    <!--
+      ContinueOnError: if Playnite is currently running it holds the deployed
+      DLL open, which would otherwise fail the whole build. Compilation has
+      already succeeded by this point; a locked deploy copy just means the
+      running instance won't see the change until it's restarted.
+    -->
+    <Copy SourceFiles="@(_CoverShuffleDeployFiles)" DestinationFolder="$(MSBuildProjectDirectory)" SkipUnchangedFiles="false"
+          Condition="Exists('%(_CoverShuffleDeployFiles.Identity)')" ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>

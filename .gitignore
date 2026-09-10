@@ -1,0 +1,13 @@
+bin/
+obj/
+*.user
+.vs/
+
+# Deployed alongside extension.yaml so Playnite can load the plugin directly
+# (Playnite resolves Module: relative to extension.yaml, not bin/<Configuration>/).
+/PluginCoverShuffle.dll
+/PluginCoverShuffle.pdb
+/Newtonsoft.Json.dll
+
+# Claude Code local settings
+.claude/settings.local.json

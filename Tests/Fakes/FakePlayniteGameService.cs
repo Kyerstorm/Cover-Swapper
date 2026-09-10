@@ -1,0 +1,52 @@
+using System;
+using System.Collections.Generic;
+using PluginCoverShuffle.Playnite.Integration;
+
+namespace PluginCoverShuffle.Tests.Fakes
+{
+    /// <summary>
+    /// In-memory fake of <see cref="IPlayniteGameService"/> so cover-control
+    /// logic can be tested without a live Playnite installation.
+    /// </summary>
+    public class FakePlayniteGameService : IPlayniteGameService
+    {
+        private readonly Dictionary<Guid, string> _coverReferences = new Dictionary<Guid, string>();
+        private readonly Dictionary<Guid, string> _gameNames = new Dictionary<Guid, string>();
+
+        public List<(Guid GameId, string CoverReference)> SetCoverReferenceCalls { get; } = new List<(Guid, string)>();
+
+        /// <summary>When set, <see cref="SetCoverReference"/> throws for this game, simulating an unexpected per-game failure.</summary>
+        public Guid? GameIdToThrowOn { get; set; }
+
+        public void SeedCoverReference(Guid gameId, string coverReference)
+        {
+            _coverReferences[gameId] = coverReference;
+        }
+
+        public string GetCoverReference(Guid gameId)
+        {
+            return _coverReferences.TryGetValue(gameId, out var reference) ? reference : null;
+        }
+
+        public void SetCoverReference(Guid gameId, string coverReference)
+        {
+            if (GameIdToThrowOn == gameId)
+            {
+                throw new InvalidOperationException("Simulated failure for test purposes.");
+            }
+
+            _coverReferences[gameId] = coverReference;
+            SetCoverReferenceCalls.Add((gameId, coverReference));
+        }
+
+        public void SeedGameName(Guid gameId, string name)
+        {
+            _gameNames[gameId] = name;
+        }
+
+        public string GetGameName(Guid gameId)
+        {
+            return _gameNames.TryGetValue(gameId, out var name) ? name : null;
+        }
+    }
+}

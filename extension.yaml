@@ -1,0 +1,9 @@
+Id: 2f6a9b6e-9c3a-4d5a-8f0c-7b3c1a4e6d21
+Name: Cover Shuffle
+Author: Jahreal
+Version: 1.0.0
+Module: PluginCoverShuffle.dll
+Type: GenericPlugin
+
+# Minimum Playnite API version this extension has been tested against.
+MinimumApiVersion: 6.16.0

@@ -1,0 +1,58 @@
+<UserControl x:Class="PluginCoverShuffle.UI.CoverShuffleSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
+             mc:Ignorable="d"
+             d:DesignWidth="500">
+    <UserControl.Resources>
+        <ui:TimeSpanHoursConverter x:Key="TimeSpanHoursConverter" />
+        <ui:EnumToBooleanConverter x:Key="EnumToBooleanConverter" />
+    </UserControl.Resources>
+    <StackPanel Margin="20">
+        <TextBlock Text="Cover Shuffle" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" />
+        <TextBlock Text="Cover management is configured on a per-game basis in a later version. These settings control the shuffle engine defaults."
+                   TextWrapping="Wrap" Margin="0,0,0,15" Opacity="0.8" />
+
+        <CheckBox Content="Enable Cover Shuffle"
+                  IsChecked="{Binding Settings.Enabled}"
+                  Margin="0,0,0,10" />
+
+        <CheckBox Content="Avoid consecutive duplicate covers"
+                  IsChecked="{Binding Settings.AvoidConsecutiveDuplicates}"
+                  Margin="0,0,0,10" />
+
+        <CheckBox Content="Shuffle on Playnite startup"
+                  IsChecked="{Binding Settings.ShuffleOnStartup}"
+                  Margin="0,0,0,10" />
+
+        <CheckBox Content="Shuffle on game launch"
+                  IsChecked="{Binding Settings.ShuffleOnGameLaunch}"
+                  Margin="0,0,0,10" />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock Text="Shuffle interval (hours):" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <TextBox Text="{Binding Settings.Interval, Converter={StaticResource TimeSpanHoursConverter}}"
+                     Width="80" />
+        </StackPanel>
+
+        <TextBlock Text="New game behavior:" Margin="0,15,0,5" />
+        <StackPanel Orientation="Horizontal">
+            <RadioButton Content="Do nothing" GroupName="NewGameBehavior" Margin="0,0,15,0"
+                         IsChecked="{Binding Settings.NewGameBehavior, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=DoNothing}" />
+            <RadioButton Content="Ask" GroupName="NewGameBehavior" Margin="0,0,15,0"
+                         IsChecked="{Binding Settings.NewGameBehavior, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Ask}" />
+            <RadioButton Content="Automatic" GroupName="NewGameBehavior"
+                         IsChecked="{Binding Settings.NewGameBehavior, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Automatic}" />
+        </StackPanel>
+
+        <TextBlock Text="SteamGridDB" FontSize="16" FontWeight="Bold" Margin="0,20,0,10" />
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="API key:" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <TextBox Text="{Binding Settings.SteamGridDbApiKey, UpdateSourceTrigger=PropertyChanged}" Width="260" />
+            <Button Content="Validate" Margin="10,0,0,0" Click="ValidateApiKeyButton_Click" />
+        </StackPanel>
+        <TextBlock Text="{Binding ApiKeyValidationStatus}" Margin="0,5,0,0" Opacity="0.8" />
+    </StackPanel>
+</UserControl>
