@@ -38,6 +38,9 @@ namespace PluginCoverShuffle
         private readonly ICoverShuffleLogger _logger;
         private CoverShufflePluginSettingsViewModel _settingsViewModel;
 
+        /// <summary>Narrow view over Playnite's game database (name/cover lookups) that plugin logic depends on instead of <c>IPlayniteAPI</c> directly.</summary>
+        internal IPlayniteGameService GameService { get; private set; }
+
         /// <summary>Persists game configuration, covers, shuffle state, and restoration info.</summary>
         internal ICoverShuffleRepository Repository { get; private set; }
 
@@ -99,6 +102,7 @@ namespace PluginCoverShuffle
                 _logger.Info($"Cover Shuffle storage initialized at '{layout.RootPath}'.");
 
                 var gameService = new PlayniteGameService(api);
+                GameService = gameService;
                 CoverService = new PlayniteCoverService(Repository, gameService, Storage, GetGlobalSettings, _logger);
                 ImportService = new CoverImportService(Repository, Storage, _logger);
 
@@ -125,7 +129,7 @@ namespace PluginCoverShuffle
             }
 
             _menuFactory = new CoverShuffleGameMenuFactory(
-                CoverService, ImportService, SteamGridDbProvider, PlayniteMetadataProvider, Repository, Storage, api.Dialogs, _logger);
+                CoverService, ImportService, SteamGridDbProvider, PlayniteMetadataProvider, Repository, Storage, api.Dialogs, _logger, GameService);
         }
 
         private CoverShuffleSettings GetGlobalSettings() => LoadPluginSettings<CoverShuffleSettings>();

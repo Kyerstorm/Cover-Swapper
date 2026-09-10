@@ -31,6 +31,7 @@ namespace PluginCoverShuffle.Playnite.Integration
         private readonly ICoverStorage _storage;
         private readonly IDialogsFactory _dialogs;
         private readonly ICoverShuffleLogger _logger;
+        private readonly IPlayniteGameService _gameService;
         private readonly LocalFileCoverProvider _localFileCoverProvider = new LocalFileCoverProvider();
 
         public CoverShuffleGameMenuFactory(
@@ -41,7 +42,8 @@ namespace PluginCoverShuffle.Playnite.Integration
             ICoverShuffleRepository repository,
             ICoverStorage storage,
             IDialogsFactory dialogs,
-            ICoverShuffleLogger logger)
+            ICoverShuffleLogger logger,
+            IPlayniteGameService gameService = null)
         {
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -54,6 +56,7 @@ namespace PluginCoverShuffle.Playnite.Integration
             _playniteMetadataProvider = playniteMetadataProvider;
             _repository = repository;
             _storage = storage;
+            _gameService = gameService;
         }
 
         public IEnumerable<GameMenuItem> BuildMenuItems(List<Game> games)
@@ -114,8 +117,9 @@ namespace PluginCoverShuffle.Playnite.Integration
                     MenuSection = MenuSectionName + "|Add Cover",
                     Action = args => ForEachGame(args, id =>
                     {
-                        var viewModel = new SteamGridDbSearchViewModel(id, _steamGridDbProvider, _importService, _repository, _logger);
-                        new SteamGridDbSearchWindow(viewModel).ShowDialog();
+                        var gameName = _gameService?.GetGameName(id);
+                        var viewModel = new SteamGridDbSearchViewModel(id, gameName, _steamGridDbProvider, _importService, _repository, _logger);
+                        SteamGridDbSearchView.ShowDialog(_dialogs, viewModel);
                     })
                 });
             }

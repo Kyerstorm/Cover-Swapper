@@ -43,7 +43,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             _playniteMetadataProvider = new FakeCoverProvider { Source = CoverSource.PlayniteMetadata };
             _dialogs = new FakeDialogsFactory();
             _factory = new CoverShuffleGameMenuFactory(
-                _coverService, _importService, _steamGridDbProvider, _playniteMetadataProvider, _repository, _storage, _dialogs, new FakeCoverShuffleLogger());
+                _coverService, _importService, _steamGridDbProvider, _playniteMetadataProvider, _repository, _storage, _dialogs, new FakeCoverShuffleLogger(), _gameService);
         }
 
         public void Dispose()

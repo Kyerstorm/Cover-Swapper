@@ -12,9 +12,10 @@ using PluginCoverShuffle.Services;
 namespace PluginCoverShuffle.UI
 {
     /// <summary>
-    /// Backs the "Add Cover -> SteamGridDB" window: search, preview grid,
-    /// and add. Contains no WPF dependency beyond <see cref="ObservableObject"/>,
-    /// so search/add orchestration is testable without a real window.
+    /// Backs the "Add Cover -> SteamGridDB" window: search, a selectable
+    /// preview grid, and add-selected. Contains no WPF dependency beyond
+    /// <see cref="ObservableObject"/>, so search/selection/add orchestration
+    /// is testable without a real window.
     /// </summary>
     public class SteamGridDbSearchViewModel : ObservableObject
     {
@@ -24,7 +25,15 @@ namespace PluginCoverShuffle.UI
         private readonly ICoverShuffleRepository _repository;
         private readonly ICoverShuffleLogger _logger;
 
+        private static readonly string[] ViewStatePropertyNames =
+        {
+            nameof(ShowLoading), nameof(ShowError), nameof(ShowEmpty), nameof(ShowResults)
+        };
+
         public ObservableCollection<SteamGridDbResultItem> Results { get; } = new ObservableCollection<SteamGridDbResultItem>();
+
+        /// <summary>The Playnite game this dialog was opened for; used only to prefill the search box.</summary>
+        public string GameName { get; }
 
         private string _searchQuery;
 
@@ -34,40 +43,134 @@ namespace PluginCoverShuffle.UI
             set => SetValue(ref _searchQuery, value);
         }
 
+        private bool _isSearching;
+
+        /// <summary>True only while a search is in flight; drives the full-grid loading state.</summary>
+        public bool IsSearching
+        {
+            get => _isSearching;
+            set => SetValue(ref _isSearching, value,
+                new[] { nameof(IsSearching), nameof(IsBusy), nameof(CanAddSelected) }.Concat(ViewStatePropertyNames).ToArray());
+        }
+
+        private bool _isAdding;
+
+        /// <summary>True only while the selected cover is downloading/importing.</summary>
+        public bool IsAdding
+        {
+            get => _isAdding;
+            set => SetValue(ref _isAdding, value, nameof(IsAdding), nameof(IsBusy), nameof(CanAddSelected));
+        }
+
+        /// <summary>True while any network/import operation is in flight.</summary>
+        public bool IsBusy => IsSearching || IsAdding;
+
+        private bool _hasSearched;
+
+        /// <summary>True once a search has completed at least once; gates the empty-results state.</summary>
+        public bool HasSearched
+        {
+            get => _hasSearched;
+            set => SetValue(ref _hasSearched, value, new[] { nameof(HasSearched) }.Concat(ViewStatePropertyNames).ToArray());
+        }
+
+        private bool _hasResults;
+
+        public bool HasResults
+        {
+            get => _hasResults;
+            set => SetValue(ref _hasResults, value, new[] { nameof(HasResults) }.Concat(ViewStatePropertyNames).ToArray());
+        }
+
+        private string _errorMessage;
+
+        /// <summary>Set when a search or add operation fails; null when there is no error to show.</summary>
+        public string ErrorMessage
+        {
+            get => _errorMessage;
+            set => SetValue(ref _errorMessage, value, new[] { nameof(ErrorMessage) }.Concat(ViewStatePropertyNames).ToArray());
+        }
+
+        /// <summary>Full-grid loading indicator, shown only while searching.</summary>
+        public bool ShowLoading => IsSearching;
+
+        /// <summary>Shown when the last search or add failed with a real error.</summary>
+        public bool ShowError => !IsSearching && ErrorMessage != null;
+
+        /// <summary>Shown after a search that returned zero covers.</summary>
+        public bool ShowEmpty => !IsSearching && ErrorMessage == null && HasSearched && !HasResults;
+
+        /// <summary>Shown when there are covers to display.</summary>
+        public bool ShowResults => !IsSearching && ErrorMessage == null && HasResults;
+
         private string _statusMessage;
 
+        /// <summary>Short transient status text (e.g. "Cover added."), shown in the bottom bar.</summary>
         public string StatusMessage
         {
             get => _statusMessage;
             set => SetValue(ref _statusMessage, value);
         }
 
-        private bool _isBusy;
+        private string _resultCountText;
 
-        public bool IsBusy
+        public string ResultCountText
         {
-            get => _isBusy;
-            set => SetValue(ref _isBusy, value);
+            get => _resultCountText;
+            set => SetValue(ref _resultCountText, value);
         }
+
+        private bool _isAtCoverLimit;
+
+        public bool IsAtCoverLimit
+        {
+            get => _isAtCoverLimit;
+            set => SetValue(ref _isAtCoverLimit, value, nameof(IsAtCoverLimit), nameof(CanAddSelected));
+        }
+
+        public string CoverLimitMessage => $"This game already has the maximum of {CoverLimitPolicy.MaxCoversPerGame} covers.";
+
+        private SteamGridDbResultItem _selectedItem;
+
+        public SteamGridDbResultItem SelectedItem
+        {
+            get => _selectedItem;
+            set => SetValue(ref _selectedItem, value, nameof(SelectedItem), nameof(CanAddSelected), nameof(SelectedCountText));
+        }
+
+        /// <summary>Whether "Add Selected Cover" should be enabled.</summary>
+        public bool CanAddSelected => SelectedItem != null && !SelectedItem.AlreadyAdded && !IsBusy && !IsAtCoverLimit;
+
+        public string SelectedCountText => $"Selected: {(SelectedItem == null ? 0 : 1)}";
 
         public SteamGridDbSearchViewModel(
             Guid gameId,
+            string gameName,
             ICoverProvider provider,
             CoverImportService importService,
             ICoverShuffleRepository repository,
             ICoverShuffleLogger logger)
         {
             _gameId = gameId;
+            GameName = gameName;
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
             _importService = importService ?? throw new ArgumentNullException(nameof(importService));
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            if (!string.IsNullOrWhiteSpace(gameName))
+            {
+                SearchQuery = gameName;
+            }
+
+            RefreshCoverLimitState();
         }
 
         public async Task SearchAsync()
         {
             if (string.IsNullOrWhiteSpace(SearchQuery))
             {
+                ErrorMessage = null;
                 StatusMessage = "Enter a game name to search.";
                 return;
             }
@@ -77,8 +180,11 @@ namespace PluginCoverShuffle.UI
                 return;
             }
 
-            IsBusy = true;
-            StatusMessage = "Searching...";
+            IsSearching = true;
+            ErrorMessage = null;
+            StatusMessage = null;
+            HasResults = false;
+            SelectedItem = null;
             Results.Clear();
 
             try
@@ -86,7 +192,7 @@ namespace PluginCoverShuffle.UI
                 var searchResult = await _provider.SearchAsync(new CoverSearchRequest { GameId = _gameId, Query = SearchQuery }).ConfigureAwait(true);
                 if (!searchResult.Success)
                 {
-                    StatusMessage = searchResult.ErrorMessage;
+                    ErrorMessage = searchResult.ErrorMessage;
                     return;
                 }
 
@@ -100,34 +206,42 @@ namespace PluginCoverShuffle.UI
                     Results.Add(new SteamGridDbResultItem(asset, existingSourceIds.Contains(asset.SourceId)));
                 }
 
-                StatusMessage = Results.Count == 0 ? "No covers found." : $"{Results.Count} cover(s) found.";
+                HasResults = Results.Count > 0;
+                ResultCountText = Results.Count == 1 ? "1 cover found" : $"{Results.Count} covers found";
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "SteamGridDB search failed unexpectedly.");
-                StatusMessage = "Something went wrong searching SteamGridDB.";
+                ErrorMessage = "Something went wrong searching SteamGridDB.";
             }
             finally
             {
-                IsBusy = false;
+                HasSearched = true;
+                IsSearching = false;
+                RefreshCoverLimitState();
             }
         }
 
+        /// <summary>Downloads and imports whichever cover is currently selected.</summary>
+        public Task AddSelectedAsync() => AddAsync(SelectedItem);
+
         public async Task AddAsync(SteamGridDbResultItem item)
         {
-            if (item == null || item.AlreadyAdded || IsBusy)
+            if (item == null || item.AlreadyAdded || IsBusy || IsAtCoverLimit)
             {
                 return;
             }
 
-            IsBusy = true;
+            IsAdding = true;
+            ErrorMessage = null;
             StatusMessage = "Downloading...";
             try
             {
                 var downloadResult = await _provider.DownloadAsync(item.Asset).ConfigureAwait(true);
                 if (!downloadResult.Success)
                 {
-                    StatusMessage = downloadResult.ErrorMessage;
+                    StatusMessage = null;
+                    ErrorMessage = downloadResult.ErrorMessage;
                     return;
                 }
 
@@ -142,7 +256,8 @@ namespace PluginCoverShuffle.UI
 
                 if (!importResult.IsSuccess)
                 {
-                    StatusMessage = importResult.Message;
+                    StatusMessage = null;
+                    ErrorMessage = importResult.Message;
                     return;
                 }
 
@@ -152,12 +267,20 @@ namespace PluginCoverShuffle.UI
             catch (Exception ex)
             {
                 _logger.Error(ex, "Adding a SteamGridDB cover failed unexpectedly.");
-                StatusMessage = "Something went wrong adding that cover.";
+                StatusMessage = null;
+                ErrorMessage = "Something went wrong adding that cover.";
             }
             finally
             {
-                IsBusy = false;
+                IsAdding = false;
+                RefreshCoverLimitState();
+                OnPropertyChanged(nameof(CanAddSelected));
             }
+        }
+
+        private void RefreshCoverLimitState()
+        {
+            IsAtCoverLimit = _repository.GetCovers(_gameId).Count >= CoverLimitPolicy.MaxCoversPerGame;
         }
     }
 }

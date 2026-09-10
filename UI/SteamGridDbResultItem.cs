@@ -23,5 +23,9 @@ namespace PluginCoverShuffle.UI
             Asset = asset;
             AlreadyAdded = alreadyAdded;
         }
+
+        /// <summary>Screen-reader text for this card, since the image itself carries no alt text.</summary>
+        public string AccessibleDescription =>
+            AlreadyAdded ? "SteamGridDB cover, already added to this game" : "SteamGridDB cover";
     }
 }
