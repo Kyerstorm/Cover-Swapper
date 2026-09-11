@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: |
+          dotnet restore PluginCoverShuffle.csproj
+          dotnet restore Tests/PluginCoverShuffle.Tests.csproj
+
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet build PluginCoverShuffle.csproj -c Release --no-restore `
+            | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            throw "Build failed."
+          }
+
+      - name: Check for compiler warnings
+        shell: pwsh
+        run: |
+          $warnings = Select-String -Path build.log -Pattern 'warning CS\d+'
+          if ($warnings) {
+            Write-Host "Compiler warnings found:"
+            $warnings | ForEach-Object { Write-Host $_.Line }
+            throw "New compiler warnings are not allowed without justification (see CLAUDE.md phase completion gate)."
+          }
+
+      - name: Test
+        run: dotnet test Tests/PluginCoverShuffle.Tests.csproj -c Release --no-restore

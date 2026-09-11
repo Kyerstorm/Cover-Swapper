@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: |
+          dotnet restore PluginCoverShuffle.csproj
+          dotnet restore Tests/PluginCoverShuffle.Tests.csproj
+
+      - name: Build
+        run: dotnet build PluginCoverShuffle.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Tests/PluginCoverShuffle.Tests.csproj -c Release --no-restore
+
+      - name: Verify tag matches project version
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+
+          $csprojContent = Get-Content PluginCoverShuffle.csproj -Raw
+          if ($csprojContent -notmatch '<Version>([^<]+)</Version>') {
+            throw "Could not find <Version> in PluginCoverShuffle.csproj"
+          }
+          $csprojVersion = $Matches[1]
+
+          $yamlContent = Get-Content extension.yaml -Raw
+          if ($yamlContent -notmatch 'Version:\s*(\S+)') {
+            throw "Could not find Version in extension.yaml"
+          }
+          $yamlVersion = $Matches[1]
+
+          Write-Host "Tag version:     $tagVersion"
+          Write-Host "csproj version:  $csprojVersion"
+          Write-Host "yaml version:    $yamlVersion"
+
+          if ($tagVersion -ne $csprojVersion -or $tagVersion -ne $yamlVersion) {
+            throw "Version mismatch: tag ($tagVersion), csproj ($csprojVersion), extension.yaml ($yamlVersion) must all match."
+          }
+
+      - name: Package extension
+        run: dotnet build PluginCoverShuffle.csproj -c Release -t:PackageExtension --no-restore
+
+      - name: Verify package contents
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $pextPath = "bin/Package/CoverShuffle_$tagVersion.pext"
+
+          if (-not (Test-Path $pextPath)) {
+            throw "Expected package not found at $pextPath"
+          }
+
+          # .pext is a plain zip, but Expand-Archive rejects it based on the
+          # file extension alone; ZipFile.ExtractToDirectory works on content.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $extractDir = Join-Path (Get-Location) "bin/Package/verify"
+          [System.IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path $pextPath).Path, $extractDir)
+
+          $expected = @("extension.yaml", "PluginCoverShuffle.dll", "Newtonsoft.Json.dll") | Sort-Object
+          $actual = Get-ChildItem -Path $extractDir -File -Recurse | ForEach-Object { $_.Name } | Sort-Object
+
+          $diff = Compare-Object -ReferenceObject $expected -DifferenceObject $actual
+          if ($diff) {
+            Write-Host "Package contents:"
+            $actual | ForEach-Object { Write-Host " - $_" }
+            throw "Package contents do not match the expected set (extension.yaml, PluginCoverShuffle.dll, Newtonsoft.Json.dll)."
+          }
+
+          Write-Host "Package contents verified: $($actual -join ', ')"
+
+      - name: Extract changelog section
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $lines = Get-Content CHANGELOG.md
+
+          $startIdx = -1
+          for ($i = 0; $i -lt $lines.Length; $i++) {
+            if ($lines[$i] -match "^## \[$([regex]::Escape($tagVersion))\]") { $startIdx = $i; break }
+          }
+
+          if ($startIdx -lt 0) {
+            Write-Host "No CHANGELOG.md section found for $tagVersion; release notes will be empty."
+            "" | Out-File -FilePath release-notes.md -Encoding utf8
+          } else {
+            $endIdx = $lines.Length - 1
+            for ($i = $startIdx + 1; $i -lt $lines.Length; $i++) {
+              if ($lines[$i] -match "^## \[") { $endIdx = $i - 1; break }
+            }
+            $section = $lines[$startIdx..$endIdx]
+            $section | Out-File -FilePath release-notes.md -Encoding utf8
+          }
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $pextPath = "bin/Package/CoverShuffle_$tagVersion.pext"
+          gh release create "${{ github.ref_name }}" $pextPath `
+            --title "${{ github.ref_name }}" `
+            --notes-file release-notes.md
