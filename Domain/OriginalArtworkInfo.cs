@@ -10,6 +10,18 @@ namespace PluginCoverShuffle.Domain
     /// </summary>
     public class OriginalArtworkInfo
     {
+        public OriginalArtworkInfo()
+        {
+        }
+
+        /// <summary>Creates an independent copy of <paramref name="source"/>.</summary>
+        public OriginalArtworkInfo(OriginalArtworkInfo source)
+        {
+            GameId = source.GameId;
+            OriginalCoverReference = source.OriginalCoverReference;
+            CapturedAtUtc = source.CapturedAtUtc;
+        }
+
         /// <summary>The Playnite game ID this record belongs to.</summary>
         public Guid GameId { get; set; }
 

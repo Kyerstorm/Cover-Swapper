@@ -114,7 +114,7 @@ Right-click a game in Playnite → **Cover Shuffle**:
 | Action | What it does |
 |---|---|
 | Enable / Disable Cover Shuffle | Turns scheduled shuffling on/off for this game |
-| Add Cover → Local File | Copies a picture from disk into the pool |
+| Add Cover → Local File | Opens "Add Local Covers": drag & drop or browse for one or more images (PNG, JPG, JPEG, WEBP, BMP, GIF), preview and remove candidates before importing, and see per-file status (duplicate, invalid, over the 20 MB size limit, or will be resized/converted). WEBP images are converted to PNG on import; images larger than 3000px on a side are scaled down automatically. Duplicate images (by content, not filename) are rejected automatically. |
 | Add Cover → SteamGridDB | Search and browse SteamGridDB covers visually |
 | Add Cover → Playnite Metadata | Pull in the game's existing cover/background/icon |
 | Shuffle Now | Immediately advances to the next cover in the pool |

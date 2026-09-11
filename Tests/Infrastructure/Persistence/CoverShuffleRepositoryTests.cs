@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Domain.Shuffling;
@@ -331,6 +332,130 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
 
             Assert.NotNull(loaded);
             Assert.Equal(ShuffleTrigger.Random, loaded.LastShuffleTrigger);
+        }
+
+        [Fact]
+        public void GetShuffleState_MutatingReturnedShuffleCycle_DoesNotAffectStoredState()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            repository.SaveShuffleState(new ShuffleState
+            {
+                GameId = gameId,
+                ShuffleCycle = new List<Guid> { Guid.NewGuid() }
+            });
+
+            var firstRead = repository.GetShuffleState(gameId);
+            firstRead.ShuffleCycle.Add(Guid.NewGuid());
+            firstRead.ShuffleCycle.Clear();
+
+            var secondRead = repository.GetShuffleState(gameId);
+            Assert.Single(secondRead.ShuffleCycle);
+        }
+
+        [Fact]
+        public void GetGameConfiguration_MutatingReturnedSettingsOverride_DoesNotAffectStoredConfiguration()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            repository.SaveGameConfiguration(new GameConfiguration
+            {
+                GameId = gameId,
+                SettingsOverride = new GameSettingsOverride { Enabled = true }
+            });
+
+            var firstRead = repository.GetGameConfiguration(gameId);
+            firstRead.SettingsOverride.Enabled = false;
+
+            var secondRead = repository.GetGameConfiguration(gameId);
+            Assert.True(secondRead.SettingsOverride.Enabled);
+        }
+
+        [Fact]
+        public void ExecuteBatch_AppliesAllMutations_AndPersistsAcrossReload()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            var cover = NewCover(gameId);
+
+            repository.ExecuteBatch(() =>
+            {
+                repository.AddCover(cover);
+                repository.SaveShuffleState(new ShuffleState { GameId = gameId, CurrentCoverId = cover.CoverId });
+                repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId });
+            });
+
+            var reloaded = new CoverShuffleRepository(_databaseFilePath);
+            Assert.Single(reloaded.GetCovers(gameId));
+            Assert.Equal(cover.CoverId, reloaded.GetShuffleState(gameId).CurrentCoverId);
+            Assert.NotNull(reloaded.GetGameConfiguration(gameId));
+        }
+
+        [Fact]
+        public void ExecuteBatch_CoalescesMultipleMutationsIntoOnePersist()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+
+            repository.AddCover(NewCover(gameId));
+            repository.SaveShuffleState(new ShuffleState { GameId = gameId });
+            repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId });
+            Assert.Equal(3, repository.PersistCallCount);
+
+            var batched = new CoverShuffleRepository(_databaseFilePath + ".batched");
+            batched.ExecuteBatch(() =>
+            {
+                batched.AddCover(NewCover(gameId));
+                batched.SaveShuffleState(new ShuffleState { GameId = gameId });
+                batched.SaveGameConfiguration(new GameConfiguration { GameId = gameId });
+            });
+
+            Assert.Equal(1, batched.PersistCallCount);
+        }
+
+        [Fact]
+        public void ExecuteBatch_Nested_OnlyPersistsOnceAtOutermostLevel()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+
+            repository.ExecuteBatch(() =>
+            {
+                repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId });
+                repository.ExecuteBatch(() =>
+                {
+                    repository.AddCover(NewCover(gameId));
+                    repository.SaveShuffleState(new ShuffleState { GameId = gameId });
+                });
+            });
+
+            Assert.Equal(1, repository.PersistCallCount);
+        }
+
+        [Fact]
+        public void ExecuteBatch_WhenMutationsThrow_StillPersistsWhatWasAppliedAndPropagates()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                repository.ExecuteBatch(() =>
+                {
+                    repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId });
+                    throw new InvalidOperationException("boom");
+                });
+            });
+
+            Assert.Equal(1, repository.PersistCallCount);
+            Assert.NotNull(repository.GetGameConfiguration(gameId));
+        }
+
+        [Fact]
+        public void ExecuteBatch_WithNullMutations_ThrowsArgumentNullException()
+        {
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            Assert.Throws<ArgumentNullException>(() => repository.ExecuteBatch(null));
         }
 
         [Fact]

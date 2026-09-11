@@ -32,7 +32,7 @@ namespace PluginCoverShuffle.Tests.UI
             var layout = new CoverStorageLayout(Path.Combine(_tempDirectory, "storage"));
             layout.EnsureDirectoriesExist();
             var storage = new CoverStorage(layout);
-            _importService = new CoverImportService(_repository, storage, new FakeCoverShuffleLogger());
+            _importService = new CoverImportService(_repository, storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
             _viewModel = new PlayniteMetadataCoverViewModel(_gameId, _provider, _importService, _repository, new FakeCoverShuffleLogger());
         }
 

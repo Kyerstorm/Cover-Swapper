@@ -20,6 +20,11 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
         private readonly string _databaseFilePath;
         private readonly object _syncRoot = new object();
         private readonly PersistedDatabase _database;
+        private int _batchDepth;
+        private bool _persistPending;
+
+        /// <summary>Number of times the database has actually been written to disk. Test seam only.</summary>
+        internal int PersistCallCount { get; private set; }
 
         public CoverShuffleRepository(string databaseFilePath)
         {
@@ -51,7 +56,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             {
                 _database.GameConfigurations.RemoveAll(g => g.GameId == configuration.GameId);
                 _database.GameConfigurations.Add(Clone(configuration));
-                Persist();
+                RequestPersist();
             }
         }
 
@@ -103,7 +108,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
                 }
 
                 _database.Covers.Add(Clone(cover));
-                Persist();
+                RequestPersist();
             }
         }
 
@@ -112,7 +117,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             lock (_syncRoot)
             {
                 _database.Covers.RemoveAll(c => c.GameId == gameId && c.CoverId == coverId);
-                Persist();
+                RequestPersist();
             }
         }
 
@@ -133,7 +138,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
                 }
 
                 _database.Covers[index] = Clone(cover);
-                Persist();
+                RequestPersist();
             }
         }
 
@@ -156,7 +161,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             {
                 _database.ShuffleStates.RemoveAll(s => s.GameId == state.GameId);
                 _database.ShuffleStates.Add(Clone(state));
-                Persist();
+                RequestPersist();
             }
         }
 
@@ -179,7 +184,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             {
                 _database.OriginalArtworkRecords.RemoveAll(a => a.GameId == info.GameId);
                 _database.OriginalArtworkRecords.Add(Clone(info));
-                Persist();
+                RequestPersist();
             }
         }
 
@@ -188,7 +193,33 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             lock (_syncRoot)
             {
                 _database.OriginalArtworkRecords.RemoveAll(a => a.GameId == gameId);
-                Persist();
+                RequestPersist();
+            }
+        }
+
+        public void ExecuteBatch(Action mutations)
+        {
+            if (mutations == null)
+            {
+                throw new ArgumentNullException(nameof(mutations));
+            }
+
+            lock (_syncRoot)
+            {
+                _batchDepth++;
+                try
+                {
+                    mutations();
+                }
+                finally
+                {
+                    _batchDepth--;
+                    if (_batchDepth == 0 && _persistPending)
+                    {
+                        _persistPending = false;
+                        Persist();
+                    }
+                }
             }
         }
 
@@ -269,6 +300,18 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             }
         }
 
+        private void RequestPersist()
+        {
+            if (_batchDepth > 0)
+            {
+                _persistPending = true;
+            }
+            else
+            {
+                Persist();
+            }
+        }
+
         private void Persist()
         {
             var directory = Path.GetDirectoryName(_databaseFilePath);
@@ -287,19 +330,15 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             }
 
             File.Move(tempFilePath, _databaseFilePath);
+            PersistCallCount++;
         }
 
-        private static Cover Clone(Cover source) => DeepClone(source);
+        private static Cover Clone(Cover source) => source == null ? null : new Cover(source);
 
-        private static GameConfiguration Clone(GameConfiguration source) => DeepClone(source);
+        private static GameConfiguration Clone(GameConfiguration source) => source == null ? null : new GameConfiguration(source);
 
-        private static ShuffleState Clone(ShuffleState source) => DeepClone(source);
+        private static ShuffleState Clone(ShuffleState source) => source == null ? null : new ShuffleState(source);
 
-        private static OriginalArtworkInfo Clone(OriginalArtworkInfo source) => DeepClone(source);
-
-        private static T DeepClone<T>(T source) where T : class
-        {
-            return source == null ? null : JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(source));
-        }
+        private static OriginalArtworkInfo Clone(OriginalArtworkInfo source) => source == null ? null : new OriginalArtworkInfo(source);
     }
 }

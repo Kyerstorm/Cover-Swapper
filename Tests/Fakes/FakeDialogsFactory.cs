@@ -45,8 +45,12 @@ namespace PluginCoverShuffle.Tests.Fakes
         public string SelectFolder(string initialPath) => NextSelectedFolder;
         public string SelectFile(string filter) => throw new NotImplementedException();
         public string SelectFile(string filter, string initialDirectory) => throw new NotImplementedException();
-        public List<string> SelectFiles(string filter) => throw new NotImplementedException();
-        public List<string> SelectFiles(string filter, string initialDirectory) => throw new NotImplementedException();
+
+        /// <summary>File paths <see cref="SelectFiles(string)"/> returns; null/empty simulates the user cancelling.</summary>
+        public List<string> NextSelectedFiles { get; set; }
+
+        public List<string> SelectFiles(string filter) => NextSelectedFiles;
+        public List<string> SelectFiles(string filter, string initialDirectory) => NextSelectedFiles;
         public string SelectIconFile() => throw new NotImplementedException();
         public string SelectIconFile(string initialDirectory) => throw new NotImplementedException();
         public string SelectImagefile() => NextSelectedImageFile;

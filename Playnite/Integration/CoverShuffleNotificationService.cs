@@ -25,6 +25,13 @@ namespace PluginCoverShuffle.Playnite.Integration
         /// </summary>
         private static string NotificationId(Guid gameId) => "coverShuffle-" + gameId.ToString("N");
 
+        /// <summary>
+        /// Stable id for the aggregate "missing covers found" notification:
+        /// not tied to any one game, so repeated startup checks replace the
+        /// previous notification instead of piling up.
+        /// </summary>
+        private const string MissingCoversNotificationId = "coverShuffle-maintenance";
+
         public void NotifyShuffled(Guid gameId, string gameName, NotificationPreference preference)
         {
             if (preference != NotificationPreference.NotifyOnShuffle)
@@ -43,6 +50,20 @@ namespace PluginCoverShuffle.Playnite.Integration
             }
 
             _notifications.Add(NotificationId(gameId), $"Cover Shuffle could not shuffle \"{gameName}\": {message}", NotificationType.Error);
+        }
+
+        /// <summary>Raised once at startup when maintenance detects one or more covers whose files are missing.</summary>
+        public void NotifyMissingCovers(int missingCount, NotificationPreference preference)
+        {
+            if (preference == NotificationPreference.Silent)
+            {
+                return;
+            }
+
+            _notifications.Add(
+                MissingCoversNotificationId,
+                $"Cover Shuffle found {missingCount} cover(s) with a missing file. Open the Cover Shuffle Manager's Maintenance tool to review them.",
+                NotificationType.Error);
         }
     }
 }

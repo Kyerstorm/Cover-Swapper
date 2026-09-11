@@ -7,6 +7,7 @@ using Playnite.SDK;
 using PluginCoverShuffle.Domain.Providers;
 using PluginCoverShuffle.Infrastructure.Logging;
 using PluginCoverShuffle.Infrastructure.Persistence;
+using PluginCoverShuffle.Infrastructure.Providers.SteamGridDb;
 using PluginCoverShuffle.Services;
 
 namespace PluginCoverShuffle.UI
@@ -181,20 +182,70 @@ namespace PluginCoverShuffle.UI
             _viewModel.Reload();
         }
 
-        private async void AddLocalFileButton_Click(object sender, RoutedEventArgs e)
+        private void AddLocalFileButton_Click(object sender, RoutedEventArgs e)
         {
             if (_localFileCoverAddService == null || _dialogs == null)
             {
                 return;
             }
 
+            var viewModel = new AddLocalCoversViewModel(_viewModel.GameId, _repository, _localFileCoverAddService, _logger);
+            AddLocalCoversWindow.ShowDialog(_dialogs, viewModel, _owningWindow);
+            _viewModel.Reload();
+        }
+
+        private async void LocateReplacementButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_localFileCoverAddService == null || _dialogs == null)
+            {
+                return;
+            }
+
+            var coverId = (Guid)((Button)sender).Tag;
             var filePath = _dialogs.SelectImagefile();
             if (string.IsNullOrWhiteSpace(filePath))
             {
                 return;
             }
 
-            var errorMessage = await System.Threading.Tasks.Task.Run(() => _localFileCoverAddService.AddFromFile(_viewModel.GameId, filePath));
+            var result = await System.Threading.Tasks.Task.Run(
+                () => _localFileCoverAddService.ReplaceFromFile(_viewModel.GameId, coverId, filePath));
+            if (!result.IsSuccess)
+            {
+                _dialogs.ShowMessage(result.Message);
+            }
+
+            _viewModel.Reload();
+        }
+
+        private async void RestoreFromSteamGridDbButton_Click(object sender, RoutedEventArgs e)
+        {
+            var steamGridDbProvider = _steamGridDbProvider as SteamGridDbCoverProvider;
+            if (steamGridDbProvider == null || _importService == null || _dialogs == null)
+            {
+                return;
+            }
+
+            var coverId = (Guid)((Button)sender).Tag;
+            var gameId = _viewModel.GameId;
+
+            var errorMessage = await System.Threading.Tasks.Task.Run(() =>
+            {
+                var cover = _repository.GetCover(gameId, coverId);
+                if (cover == null)
+                {
+                    return "This cover no longer exists.";
+                }
+
+                if (!steamGridDbProvider.TryGetCachedFile(cover.SourceId, out var cachedPath))
+                {
+                    return "This cover's cached artwork is no longer available locally. Use \"+ SteamGridDB\" to search for replacement artwork.";
+                }
+
+                var result = _importService.ReplaceFile(gameId, coverId, cachedPath);
+                return result.IsSuccess ? null : result.Message;
+            });
+
             if (errorMessage != null)
             {
                 _dialogs.ShowMessage(errorMessage);

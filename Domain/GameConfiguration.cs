@@ -11,6 +11,19 @@ namespace PluginCoverShuffle.Domain
     /// </summary>
     public class GameConfiguration
     {
+        public GameConfiguration()
+        {
+        }
+
+        /// <summary>Creates an independent copy of <paramref name="source"/>.</summary>
+        public GameConfiguration(GameConfiguration source)
+        {
+            GameId = source.GameId;
+            SettingsOverride = source.SettingsOverride == null
+                ? null
+                : new GameSettingsOverride(source.SettingsOverride);
+        }
+
         /// <summary>The Playnite game ID this configuration belongs to.</summary>
         public Guid GameId { get; set; }
 

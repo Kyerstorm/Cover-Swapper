@@ -10,6 +10,21 @@ namespace PluginCoverShuffle.Domain
     /// </summary>
     public class ShuffleState
     {
+        public ShuffleState()
+        {
+        }
+
+        /// <summary>Creates an independent copy of <paramref name="source"/>.</summary>
+        public ShuffleState(ShuffleState source)
+        {
+            GameId = source.GameId;
+            CurrentCoverId = source.CurrentCoverId;
+            LastShuffleAt = source.LastShuffleAt;
+            NextShuffleAt = source.NextShuffleAt;
+            ShuffleCycle = new List<Guid>(source.ShuffleCycle);
+            LastShuffleTrigger = source.LastShuffleTrigger;
+        }
+
         /// <summary>The Playnite game ID this state belongs to.</summary>
         public Guid GameId { get; set; }
 

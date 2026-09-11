@@ -27,7 +27,7 @@ namespace PluginCoverShuffle.Tests.Services
             var layout = new CoverStorageLayout(Path.Combine(_tempDirectory, "storage"));
             layout.EnsureDirectoriesExist();
             _storage = new CoverStorage(layout);
-            _service = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger());
+            _service = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
         }
 
         public void Dispose()
@@ -139,6 +139,136 @@ namespace PluginCoverShuffle.Tests.Services
             var result = _service.Import(otherGameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() });
 
             Assert.True(result.IsSuccess);
+        }
+
+        [Fact]
+        public void ReplaceFile_WithValidImage_KeepsCoverIdAndHistoryButUpdatesFile()
+        {
+            var gameId = Guid.NewGuid();
+            var original = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() }).Cover;
+            var replacementFile = CreateValidImageFile();
+
+            var result = _service.ReplaceFile(gameId, original.CoverId, replacementFile);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(original.CoverId, result.Cover.CoverId);
+            Assert.Equal(original.AddedAt, result.Cover.AddedAt);
+            Assert.Equal(original.UsageCount, result.Cover.UsageCount);
+            Assert.NotEqual(original.Hash, result.Cover.Hash);
+            Assert.True(_storage.CoverFileExists(result.Cover.LocalPath));
+        }
+
+        [Fact]
+        public void ReplaceFile_WhenNewFileHasADifferentExtension_DoesNotOrphanTheOldFile()
+        {
+            var gameId = Guid.NewGuid();
+            var original = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile("original.png") }).Cover;
+            var oldAbsolutePath = _storage.GetAbsolutePath(original.LocalPath);
+            var replacementFile = Path.Combine(_tempDirectory, Guid.NewGuid().ToString("N") + ".bmp");
+            using (var bitmap = new Bitmap(4, 4))
+            {
+                bitmap.SetPixel(0, 0, Color.FromArgb(200, 50, 50));
+                bitmap.Save(replacementFile, ImageFormat.Bmp);
+            }
+
+            var result = _service.ReplaceFile(gameId, original.CoverId, replacementFile);
+
+            Assert.True(result.IsSuccess);
+            Assert.False(File.Exists(oldAbsolutePath));
+            Assert.True(_storage.CoverFileExists(result.Cover.LocalPath));
+        }
+
+        [Fact]
+        public void ReplaceFile_WithUnknownCoverId_FailsWithCoverNotFound()
+        {
+            var gameId = Guid.NewGuid();
+
+            var result = _service.ReplaceFile(gameId, Guid.NewGuid(), CreateValidImageFile());
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(CoverImportStatus.CoverNotFound, result.Status);
+        }
+
+        [Fact]
+        public void ReplaceFile_WithInvalidImage_IsRejected()
+        {
+            var gameId = Guid.NewGuid();
+            var original = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() }).Cover;
+            var corruptFile = Path.Combine(_tempDirectory, "corrupt-replacement.png");
+            File.WriteAllBytes(corruptFile, new byte[] { 0x00, 0x01, 0x02, 0x03 });
+
+            var result = _service.ReplaceFile(gameId, original.CoverId, corruptFile);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(CoverImportStatus.InvalidImage, result.Status);
+            Assert.True(_storage.CoverFileExists(original.LocalPath));
+        }
+
+        [Fact]
+        public void ReplaceFile_MatchingAnotherCoversContent_IsRejectedAsDuplicate()
+        {
+            var gameId = Guid.NewGuid();
+            var sharedFile = CreateValidImageFile();
+            var other = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = sharedFile }).Cover;
+            var toReplace = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() }).Cover;
+
+            var result = _service.ReplaceFile(gameId, toReplace.CoverId, sharedFile);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(CoverImportStatus.DuplicateCover, result.Status);
+        }
+
+        [Fact]
+        public void ReplaceFile_WithSameFileAgain_IsAllowed_NotTreatedAsDuplicateOfSelf()
+        {
+            var gameId = Guid.NewGuid();
+            var filePath = CreateValidImageFile();
+            var original = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = filePath }).Cover;
+
+            var result = _service.ReplaceFile(gameId, original.CoverId, filePath);
+
+            Assert.True(result.IsSuccess);
+        }
+
+        [Fact]
+        public void Import_FileOverSizeLimit_ReturnsFileTooLarge()
+        {
+            var gameId = Guid.NewGuid();
+            // Exactly at the max allowed pixel dimension, so it is not
+            // downscaled, but an uncompressed 24-bit BMP at that size is
+            // well past the 20 MB file-size limit.
+            var filePath = Path.Combine(_tempDirectory, "oversized.bmp");
+            using (var bitmap = new Bitmap(CoverImportPolicy.MaxImageDimensionPixels, CoverImportPolicy.MaxImageDimensionPixels))
+            {
+                bitmap.Save(filePath, ImageFormat.Bmp);
+            }
+
+            var result = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = filePath });
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(CoverImportStatus.FileTooLarge, result.Status);
+            Assert.Empty(_repository.GetCovers(gameId));
+        }
+
+        [Fact]
+        public void Import_OversizedImageDimensions_IsDownscaledBeforeStorage()
+        {
+            var gameId = Guid.NewGuid();
+            var filePath = Path.Combine(_tempDirectory, "oversized-dimensions.png");
+            using (var bitmap = new Bitmap(4000, 3000))
+            {
+                bitmap.Save(filePath, ImageFormat.Png);
+            }
+
+            var result = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = filePath });
+
+            Assert.True(result.IsSuccess);
+            var storedPath = _storage.GetAbsolutePath(result.Cover.LocalPath);
+            using (var stored = Image.FromFile(storedPath))
+            {
+                Assert.True(stored.Width <= CoverImportPolicy.MaxImageDimensionPixels);
+                Assert.True(stored.Height <= CoverImportPolicy.MaxImageDimensionPixels);
+            }
         }
     }
 }

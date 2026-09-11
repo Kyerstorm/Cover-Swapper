@@ -199,17 +199,8 @@ namespace PluginCoverShuffle.Playnite.Integration
 
         private void AddLocalFileCover(Guid gameId)
         {
-            var filePath = _dialogs.SelectImagefile();
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                return;
-            }
-
-            var errorMessage = _localFileCoverAddService.AddFromFile(gameId, filePath);
-            if (errorMessage != null)
-            {
-                _dialogs.ShowMessage(errorMessage);
-            }
+            var viewModel = new AddLocalCoversViewModel(gameId, _repository, _localFileCoverAddService, _logger);
+            AddLocalCoversWindow.ShowDialog(_dialogs, viewModel, owner: null);
         }
 
         private void ForEachGame(GameMenuItemActionArgs args, Action<Guid> action)

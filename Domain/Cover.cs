@@ -9,6 +9,25 @@ namespace PluginCoverShuffle.Domain
     /// </summary>
     public class Cover
     {
+        public Cover()
+        {
+        }
+
+        /// <summary>Creates an independent copy of <paramref name="source"/>.</summary>
+        public Cover(Cover source)
+        {
+            CoverId = source.CoverId;
+            GameId = source.GameId;
+            Source = source.Source;
+            SourceId = source.SourceId;
+            LocalPath = source.LocalPath;
+            Hash = source.Hash;
+            AddedAt = source.AddedAt;
+            LastUsedAt = source.LastUsedAt;
+            UsageCount = source.UsageCount;
+            IsEnabled = source.IsEnabled;
+        }
+
         /// <summary>Stable identifier for this cover within the plugin's own storage.</summary>
         public Guid CoverId { get; set; }
 

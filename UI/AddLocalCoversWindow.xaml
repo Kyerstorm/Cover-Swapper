@@ -1,0 +1,124 @@
+<UserControl x:Class="PluginCoverShuffle.UI.AddLocalCoversWindow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
+             xmlns:domain="clr-namespace:PluginCoverShuffle.Domain"
+             AllowDrop="True"
+             DragEnter="RootControl_DragEnter" DragOver="RootControl_DragEnter"
+             DragLeave="RootControl_DragLeave" Drop="RootControl_Drop"
+             MinWidth="560" MinHeight="420">
+    <UserControl.Resources>
+        <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <ui:InverseBoolConverter x:Key="InverseBoolConverter" />
+        <ui:CandidateStatusToBrushConverter x:Key="CandidateStatusToBrushConverter" />
+
+        <!--
+            Candidate cards follow the same ListBoxItem-template-replacement
+            approach as SteamGridDbSearchView's CoverCardStyle, for the same
+            reason: the default ListBoxItem chrome fights theme contrast, and
+            these cards need their own status badge/remove-button chrome the
+            default template has no room for.
+        -->
+        <Style x:Key="ImportCandidateCardStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="6" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleDescription}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border Width="150" BorderThickness="1" CornerRadius="4" Padding="8"
+                                BorderBrush="{DynamicResource TextBrush}" Background="Transparent">
+                            <StackPanel>
+                                <Grid>
+                                    <Image Source="{Binding ThumbnailSource}" Width="130" Height="180" Stretch="Uniform" />
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              IsEnabled="{Binding CanImport}"
+                                              HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4" />
+                                    <Button Width="22" Height="22" Padding="0" Content="&#10005;" FontWeight="Bold" FontSize="11"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
+                                            Tag="{Binding}" Click="RemoveCandidateButton_Click"
+                                            AutomationProperties.Name="Remove" />
+                                </Grid>
+                                <TextBlock Text="{Binding FileName}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,6,0,0" />
+                                <Border Background="{Binding Status, Converter={StaticResource CandidateStatusToBrushConverter}}"
+                                        CornerRadius="3" Padding="4,2" Margin="0,4,0,0" HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding StatusBadgeText}" FontSize="10" FontWeight="Bold" Foreground="White" />
+                                </Border>
+                                <TextBlock Text="{Binding StatusMessage}" FontSize="10" Opacity="0.75" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,3,0,0"
+                                           Visibility="{Binding StatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel Margin="16" LastChildFill="True">
+
+        <!-- Drop zone -->
+        <Border DockPanel.Dock="Top" Margin="0,0,0,12" Padding="20" MinHeight="110"
+                BorderThickness="2" CornerRadius="6" BorderBrush="{DynamicResource TextBrush}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Opacity" Value="0.4" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsDragActive}" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Drag images here" FontWeight="Bold" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Text="or" HorizontalAlignment="Center" Opacity="0.7" Margin="0,4"
+                           Foreground="{DynamicResource TextBrush}" />
+                <Button x:Name="BrowseFilesButton" Content="Browse Files" Padding="14,6" HorizontalAlignment="Center"
+                        Click="BrowseFilesButton_Click" />
+                <TextBlock Text="{x:Static domain:CoverImportPolicy.AllowedExtensionsDisplay}" HorizontalAlignment="Center" FontSize="11"
+                           Opacity="0.7" Margin="0,8,0,0" Foreground="{DynamicResource TextBrush}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Capacity banner -->
+        <TextBlock DockPanel.Dock="Top" Text="{Binding CapacityText}" Opacity="0.75" Margin="0,0,0,10"
+                   Foreground="{DynamicResource TextBrush}" />
+
+        <!-- Bottom action bar -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Border DockPanel.Dock="Top" Height="1" Margin="0,0,0,10" Background="{DynamicResource TextBrush}" Opacity="0.15" />
+            <TextBlock Text="{Binding StatusMessage}" Opacity="0.8" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextBrush}"
+                       Visibility="{Binding StatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CancelButton" Content="Cancel" Width="90" Padding="0,6" IsCancel="True"
+                        Click="CancelButton_Click" />
+                <Button x:Name="ImportSelectedButton" Content="Import Selected" Width="150" Margin="8,0,0,0" Padding="0,6"
+                        Click="ImportSelectedButton_Click" IsEnabled="{Binding CanImportSelected}" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Candidate grid -->
+        <TextBlock Text="No files selected yet. Drag images above or use Browse Files."
+                   TextWrapping="Wrap" Opacity="0.7" Foreground="{DynamicResource TextBrush}"
+                   Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ListBox x:Name="CandidatesList" ItemsSource="{Binding Candidates}"
+                     Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ItemContainerStyle="{StaticResource ImportCandidateCardStyle}">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+            </ListBox>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

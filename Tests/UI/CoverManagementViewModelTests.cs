@@ -35,7 +35,7 @@ namespace PluginCoverShuffle.Tests.UI
             var layout = new CoverStorageLayout(Path.Combine(_tempDirectory, "storage"));
             layout.EnsureDirectoriesExist();
             _storage = new CoverStorage(layout);
-            _importService = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger());
+            _importService = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
             _gameService = new FakePlayniteGameService();
             _coverService = new PlayniteCoverService(
                 _repository, _gameService, _storage, () => _globalSettings, new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
@@ -87,6 +87,42 @@ namespace PluginCoverShuffle.Tests.UI
             Assert.Single(viewModel.Covers);
             Assert.Equal(cover.CoverId, viewModel.Covers[0].CoverId);
             Assert.Equal(_storage.GetAbsolutePath(cover.LocalPath), viewModel.Covers[0].AbsoluteImagePath);
+        }
+
+        [Fact]
+        public void Reload_WhenCoverFileIsMissing_FlagsItAsMissing()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(cover.LocalPath));
+
+            var viewModel = CreateViewModel(gameId);
+
+            Assert.True(viewModel.Covers.Single().IsFileMissing);
+        }
+
+        [Fact]
+        public void Reload_WhenCoverFilePresent_IsNotFlaggedAsMissing()
+        {
+            var gameId = Guid.NewGuid();
+            ImportCover(gameId);
+
+            var viewModel = CreateViewModel(gameId);
+
+            Assert.False(viewModel.Covers.Single().IsFileMissing);
+        }
+
+        [Fact]
+        public void Reload_AssignsCoverNumberByAddedOrder()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+
+            var viewModel = CreateViewModel(gameId);
+
+            Assert.Equal(1, viewModel.Covers.Single(c => c.CoverId == first.CoverId).CoverNumber);
+            Assert.Equal(2, viewModel.Covers.Single(c => c.CoverId == second.CoverId).CoverNumber);
         }
 
         [Fact]

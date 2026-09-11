@@ -18,5 +18,14 @@ namespace PluginCoverShuffle.UI
 
         /// <summary>Whether this is the cover currently applied as the game's Playnite cover.</summary>
         public bool IsCurrent { get; set; }
+
+        /// <summary>Whether this cover's backing file could not be found on disk.</summary>
+        public bool IsFileMissing { get; set; }
+
+        /// <summary>1-based position of this cover within the game's pool, for a "Cover #N" label.</summary>
+        public int CoverNumber { get; set; }
+
+        /// <summary>Whether "Restore from SteamGridDB" should be offered for this cover.</summary>
+        public bool CanRestoreFromSteamGridDb => Source == CoverSource.SteamGridDb;
     }
 }

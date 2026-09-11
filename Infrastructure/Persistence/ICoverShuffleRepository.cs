@@ -62,5 +62,12 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
 
         /// <summary>Removes the game's original artwork info, e.g. after a restore completes.</summary>
         void ClearOriginalArtwork(Guid gameId);
+
+        /// <summary>
+        /// Runs <paramref name="mutations"/> and, if it performs more than one
+        /// mutation, writes the database to disk once at the end instead of once
+        /// per call. Nested calls compose: only the outermost batch persists.
+        /// </summary>
+        void ExecuteBatch(Action mutations);
     }
 }

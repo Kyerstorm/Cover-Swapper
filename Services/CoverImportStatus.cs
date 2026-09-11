@@ -6,6 +6,8 @@ namespace PluginCoverShuffle.Services
         DuplicateCover,
         InvalidImage,
         SourceFileMissing,
-        CoverLimitExceeded
+        CoverLimitExceeded,
+        CoverNotFound,
+        FileTooLarge
     }
 }

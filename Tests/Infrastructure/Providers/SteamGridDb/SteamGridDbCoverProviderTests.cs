@@ -162,5 +162,35 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Providers.SteamGridDb
 
             Assert.False(result.Success);
         }
+
+        [Fact]
+        public async System.Threading.Tasks.Task TryGetCachedFile_WhenPreviouslyDownloaded_ReturnsTheCachedPath()
+        {
+            _client.DownloadImageResult = SteamGridDbResult<byte[]>.Ok(new byte[] { 9, 9, 9 });
+            await _provider.DownloadAsync(new CoverAsset { Source = CoverSource.SteamGridDb, SourceId = "7", FullImageUrl = "https://cdn/full.png" });
+
+            var found = _provider.TryGetCachedFile("7", out var filePath);
+
+            Assert.True(found);
+            Assert.True(File.Exists(filePath));
+        }
+
+        [Fact]
+        public void TryGetCachedFile_WhenNeverCached_ReturnsFalse()
+        {
+            var found = _provider.TryGetCachedFile("999", out var filePath);
+
+            Assert.False(found);
+            Assert.Null(filePath);
+        }
+
+        [Fact]
+        public void TryGetCachedFile_WithNonNumericSourceId_ReturnsFalse()
+        {
+            var found = _provider.TryGetCachedFile("not-a-number", out var filePath);
+
+            Assert.False(found);
+            Assert.Null(filePath);
+        }
     }
 }

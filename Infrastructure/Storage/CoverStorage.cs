@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using PluginCoverShuffle.Domain;
 
 namespace PluginCoverShuffle.Infrastructure.Storage
 {
@@ -11,8 +12,6 @@ namespace PluginCoverShuffle.Infrastructure.Storage
     /// </summary>
     public class CoverStorage : ICoverStorage
     {
-        private static readonly string[] AllowedExtensions = { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif" };
-
         private readonly CoverStorageLayout _layout;
 
         public CoverStorage(CoverStorageLayout layout)
@@ -28,7 +27,7 @@ namespace PluginCoverShuffle.Infrastructure.Storage
             }
 
             var extension = Path.GetExtension(sourceFilePath).ToLowerInvariant();
-            if (Array.IndexOf(AllowedExtensions, extension) < 0)
+            if (Array.IndexOf(CoverImportPolicy.AllowedExtensions, extension) < 0)
             {
                 throw new NotSupportedException($"Cover file extension '{extension}' is not supported.");
             }

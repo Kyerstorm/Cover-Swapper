@@ -85,6 +85,9 @@ namespace PluginCoverShuffle
         /// <summary>Finds and, on explicit confirmation, cleans up orphaned files, invalid records, and cache data.</summary>
         internal MaintenanceService MaintenanceService { get; private set; }
 
+        /// <summary>Runs a read-only maintenance scan at startup and notifies if any covers have a missing file.</summary>
+        internal StartupMaintenanceCheckService StartupMaintenanceCheckService { get; private set; }
+
         // Shared across the plugin's lifetime; SteamGridDbClient never disposes it.
         private readonly HttpClient _httpClient = new HttpClient();
 
@@ -110,7 +113,7 @@ namespace PluginCoverShuffle
                 GameService = gameService;
                 var shuffleEngine = new ShuffleEngine(new SystemRandomShuffleRandomizer());
                 CoverService = new PlayniteCoverService(Repository, gameService, Storage, GetGlobalSettings, _logger, shuffleEngine);
-                ImportService = new CoverImportService(Repository, Storage, _logger);
+                ImportService = new CoverImportService(Repository, Storage, _logger, new ImageNormalizationService());
 
                 var steamGridDbClient = new SteamGridDbClient(_httpClient, GetSteamGridDbApiKey, _logger);
                 var steamGridDbCache = new SteamGridDbCache(layout.CachePath);
@@ -130,6 +133,7 @@ namespace PluginCoverShuffle
                 BulkConfigurationService = new BulkConfigurationService(CoverService, _logger);
                 ImportExportService = new ImportExportService(Repository, Storage, _logger);
                 MaintenanceService = new MaintenanceService(Repository, Storage, layout, _logger);
+                StartupMaintenanceCheckService = new StartupMaintenanceCheckService(MaintenanceService, notificationService, GetGlobalSettings, _logger);
             }
             catch (Exception ex)
             {
@@ -206,6 +210,15 @@ namespace PluginCoverShuffle
                 catch (Exception ex)
                 {
                     _logger.Error(ex, "Startup shuffle check failed unexpectedly.");
+                }
+
+                try
+                {
+                    StartupMaintenanceCheckService?.RunStartupCheck();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Startup maintenance check failed unexpectedly.");
                 }
             });
         }

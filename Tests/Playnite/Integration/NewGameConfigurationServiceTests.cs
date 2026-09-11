@@ -36,7 +36,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             var storage = new CoverStorage(layout);
             _gameService = new FakePlayniteGameService();
             _coverService = new PlayniteCoverService(_repository, _gameService, storage, () => _globalSettings, new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
-            _importService = new CoverImportService(_repository, storage, new FakeCoverShuffleLogger());
+            _importService = new CoverImportService(_repository, storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
         }
 
         public void Dispose()

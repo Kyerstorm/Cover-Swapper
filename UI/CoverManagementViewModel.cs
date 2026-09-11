@@ -134,8 +134,10 @@ namespace PluginCoverShuffle.UI
             var state = _repository.GetShuffleState(_gameId);
 
             Covers.Clear();
-            foreach (var cover in _repository.GetCovers(_gameId).OrderBy(c => c.AddedAt))
+            var orderedCovers = _repository.GetCovers(_gameId).OrderBy(c => c.AddedAt).ToList();
+            for (var i = 0; i < orderedCovers.Count; i++)
             {
+                var cover = orderedCovers[i];
                 Covers.Add(new CoverDisplayItem
                 {
                     CoverId = cover.CoverId,
@@ -143,7 +145,9 @@ namespace PluginCoverShuffle.UI
                     Source = cover.Source,
                     AddedAt = cover.AddedAt,
                     UsageCount = cover.UsageCount,
-                    IsCurrent = state?.CurrentCoverId == cover.CoverId
+                    IsCurrent = state?.CurrentCoverId == cover.CoverId,
+                    IsFileMissing = !_storage.CoverFileExists(cover.LocalPath),
+                    CoverNumber = i + 1
                 });
             }
 

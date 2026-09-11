@@ -69,5 +69,35 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             Assert.Equal(2, _notifications.AddedMessages.Count);
             Assert.Equal(_notifications.AddedMessages[0].Id, _notifications.AddedMessages[1].Id);
         }
+
+        [Theory]
+        [InlineData(NotificationPreference.NotifyOnShuffle)]
+        [InlineData(NotificationPreference.NotifyOnErrorOnly)]
+        public void NotifyMissingCovers_WhenNotSilent_AddsErrorNotification(NotificationPreference preference)
+        {
+            _service.NotifyMissingCovers(3, preference);
+
+            Assert.Single(_notifications.AddedMessages);
+            Assert.Equal(NotificationType.Error, _notifications.AddedMessages[0].Type);
+            Assert.Contains("3", _notifications.AddedMessages[0].Text);
+        }
+
+        [Fact]
+        public void NotifyMissingCovers_WhenSilent_AddsNothing()
+        {
+            _service.NotifyMissingCovers(3, NotificationPreference.Silent);
+
+            Assert.Empty(_notifications.AddedMessages);
+        }
+
+        [Fact]
+        public void NotifyMissingCovers_CalledTwice_ReusesTheSameNotificationId()
+        {
+            _service.NotifyMissingCovers(2, NotificationPreference.NotifyOnShuffle);
+            _service.NotifyMissingCovers(5, NotificationPreference.NotifyOnShuffle);
+
+            Assert.Equal(2, _notifications.AddedMessages.Count);
+            Assert.Equal(_notifications.AddedMessages[0].Id, _notifications.AddedMessages[1].Id);
+        }
     }
 }

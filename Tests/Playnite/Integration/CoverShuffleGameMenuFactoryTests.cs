@@ -39,7 +39,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             _storage = new CoverStorage(layout);
             _gameService = new FakePlayniteGameService();
             _coverService = new PlayniteCoverService(_repository, _gameService, _storage, () => new CoverShuffleSettings(), new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
-            _importService = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger());
+            _importService = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
             _steamGridDbProvider = new FakeCoverProvider { Source = CoverSource.SteamGridDb };
             _playniteMetadataProvider = new FakeCoverProvider { Source = CoverSource.PlayniteMetadata };
             _dialogs = new FakeDialogsFactory();
@@ -141,26 +141,6 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
 
             var addLocalFile = items.Single(i => i.Description == "Local File");
             Assert.Equal("Cover Shuffle|Add Cover", addLocalFile.MenuSection);
-        }
-
-        [Fact]
-        public void AddLocalFileItem_Action_ImportsTheSelectedFileIntoTheGamesCoverPool()
-        {
-            var game = NewGame();
-            var sourceFile = Path.Combine(_tempDirectory, "picked-cover.png");
-            using (var bitmap = new System.Drawing.Bitmap(4, 4))
-            {
-                bitmap.Save(sourceFile, System.Drawing.Imaging.ImageFormat.Png);
-            }
-            _dialogs.NextSelectedImageFile = sourceFile;
-
-            var items = _factory.BuildMenuItems(new List<Game> { game }).ToList();
-            var addLocalFile = items.Single(i => i.Description == "Local File");
-
-            addLocalFile.Action(new GameMenuItemActionArgs { Games = new List<Game> { game } });
-
-            Assert.Single(_repository.GetCovers(game.Id));
-            Assert.Empty(_dialogs.ShownMessages);
         }
 
         [Fact]

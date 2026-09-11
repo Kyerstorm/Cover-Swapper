@@ -137,6 +137,22 @@ namespace PluginCoverShuffle.Infrastructure.Providers.SteamGridDb
             return CoverDownloadResult.Succeeded(filePath);
         }
 
+        /// <summary>
+        /// Looks up a previously downloaded grid's image in the local
+        /// SteamGridDB cache only, without any network call. Used to
+        /// recover a cover whose plugin-owned copy was found missing.
+        /// </summary>
+        public bool TryGetCachedFile(string sourceId, out string filePath)
+        {
+            if (!int.TryParse(sourceId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var gridId))
+            {
+                filePath = null;
+                return false;
+            }
+
+            return _cache.TryGetCachedFile(gridId, out filePath);
+        }
+
         private static string DescribeError(SteamGridDbErrorKind kind, string message)
         {
             switch (kind)

@@ -12,6 +12,23 @@ namespace PluginCoverShuffle.Domain
     /// </summary>
     public class GameSettingsOverride
     {
+        public GameSettingsOverride()
+        {
+        }
+
+        /// <summary>Creates an independent copy of <paramref name="source"/>.</summary>
+        public GameSettingsOverride(GameSettingsOverride source)
+        {
+            Enabled = source.Enabled;
+            Interval = source.Interval;
+            Mode = source.Mode;
+            AvoidConsecutiveDuplicates = source.AvoidConsecutiveDuplicates;
+            ShuffleOnStartup = source.ShuffleOnStartup;
+            ShuffleOnGameLaunch = source.ShuffleOnGameLaunch;
+            NotificationPreference = source.NotificationPreference;
+            NewGameBehavior = source.NewGameBehavior;
+        }
+
         public bool? Enabled { get; set; }
 
         public TimeSpan? Interval { get; set; }
