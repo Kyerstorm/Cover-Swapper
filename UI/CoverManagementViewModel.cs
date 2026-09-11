@@ -45,6 +45,61 @@ namespace PluginCoverShuffle.UI
 
         public bool IsEmpty => Covers.Count == 0;
 
+        private CoverDisplayItem _selectedCover;
+
+        /// <summary>
+        /// The cover the user has clicked/focused in the cover grid this
+        /// session — distinct from <see cref="CoverDisplayItem.IsCurrent"/>,
+        /// which is whatever Playnite is actually showing right now. Drives
+        /// the per-selection action bar (Use This Cover / Remove / recovery
+        /// actions) so cover cards themselves stay free of nested buttons.
+        /// </summary>
+        public CoverDisplayItem SelectedCover
+        {
+            get => _selectedCover;
+            set => SetValue(ref _selectedCover, value, nameof(SelectedCover), nameof(HasSelectedCover), nameof(CanApplySelectedCover), nameof(CanRestoreSelectedFromSteamGridDb), nameof(ShowSingleSelectionBar));
+        }
+
+        public bool HasSelectedCover => SelectedCover != null;
+
+        /// <summary>Whether "Use This Cover" makes sense for the current selection (not already current, not unusable).</summary>
+        public bool CanApplySelectedCover => SelectedCover != null && SelectedCover.CanSetAsCurrent;
+
+        /// <summary>Whether "Restore from SteamGridDB" should be offered for the current selection.</summary>
+        public bool CanRestoreSelectedFromSteamGridDb => SelectedCover != null && SelectedCover.IsUnavailable && SelectedCover.CanRestoreFromSteamGridDb;
+
+        private readonly HashSet<Guid> _multiSelectedCoverIds = new HashSet<Guid>();
+
+        /// <summary>
+        /// The full multi-selection from the cover grid (Ctrl/Shift-click,
+        /// select-all), kept separate from <see cref="SelectedCover"/> (the
+        /// grid's single "active" item, used by keyboard Enter/double-click).
+        /// Populated by the view's code-behind from
+        /// <c>ListBox.SelectedItems</c>, which WPF does not expose as a
+        /// bindable property, via <see cref="SetSelection"/>.
+        /// </summary>
+        public ObservableCollection<CoverDisplayItem> SelectedCovers { get; } = new ObservableCollection<CoverDisplayItem>();
+
+        public int SelectedCoverCount => SelectedCovers.Count;
+
+        public bool HasMultipleSelectedCovers => SelectedCoverCount > 1;
+
+        /// <summary>Whether "Enable" is meaningful for the whole multi-selection (at least one selected cover is currently disabled).</summary>
+        public bool CanEnableSelectedCovers => SelectedCovers.Any(c => !c.IsCoverEnabled);
+
+        /// <summary>Whether "Disable" is meaningful for the whole multi-selection (at least one selected cover is currently enabled).</summary>
+        public bool CanDisableSelectedCovers => SelectedCovers.Any(c => c.IsCoverEnabled);
+
+        public bool CanRemoveSelectedCovers => SelectedCoverCount > 0;
+
+        /// <summary>Whether the single-cover action bar should show, as opposed to the multi-select bar (mutually exclusive so the two never stack).</summary>
+        public bool ShowSingleSelectionBar => HasSelectedCover && !HasMultipleSelectedCovers;
+
+        /// <summary>The cover Playnite is currently showing for this game, if any — for the large "current cover" preview.</summary>
+        public CoverDisplayItem CurrentCover { get; private set; }
+
+        public bool HasCurrentCover => CurrentCover != null;
+
         private bool _isEnabled;
 
         public bool IsEnabled
@@ -56,6 +111,17 @@ namespace PluginCoverShuffle.UI
         public string StatusText => IsEnabled ? "Enabled" : "Disabled";
 
         public string ToggleEnabledButtonText => IsEnabled ? "Disable" : "Enable";
+
+        private bool _isEnabledOverridden;
+
+        /// <summary>Whether this game has its own enable/disable override, as opposed to following the current global default.</summary>
+        public bool IsEnabledOverridden
+        {
+            get => _isEnabledOverridden;
+            private set => SetValue(ref _isEnabledOverridden, value, nameof(IsEnabledOverridden), nameof(EnabledSourceText));
+        }
+
+        public string EnabledSourceText => IsEnabledOverridden ? "(custom)" : "(using global default)";
 
         private bool _hasSavedOriginal;
 
@@ -132,12 +198,15 @@ namespace PluginCoverShuffle.UI
         public void Reload()
         {
             var state = _repository.GetShuffleState(_gameId);
+            var previouslySelectedCoverId = SelectedCover?.CoverId;
+            var previouslyMultiSelectedIds = new HashSet<Guid>(SelectedCovers.Select(c => c.CoverId));
 
             Covers.Clear();
             var orderedCovers = _repository.GetCovers(_gameId).OrderBy(c => c.AddedAt).ToList();
             for (var i = 0; i < orderedCovers.Count; i++)
             {
                 var cover = orderedCovers[i];
+                var fileExists = _storage.CoverFileExists(cover.LocalPath);
                 Covers.Add(new CoverDisplayItem
                 {
                     CoverId = cover.CoverId,
@@ -146,10 +215,31 @@ namespace PluginCoverShuffle.UI
                     AddedAt = cover.AddedAt,
                     UsageCount = cover.UsageCount,
                     IsCurrent = state?.CurrentCoverId == cover.CoverId,
-                    IsFileMissing = !_storage.CoverFileExists(cover.LocalPath),
+                    IsFileMissing = !fileExists,
+                    IsCorrupt = fileExists && !CoverImageValidator.IsImageHeaderReadable(_storage.GetAbsolutePath(cover.LocalPath)),
+                    IsCoverEnabled = cover.IsEnabled,
+                    IsFavorite = cover.IsFavorite,
                     CoverNumber = i + 1
                 });
             }
+
+            // Cover objects are recreated on every reload, so selection has to be
+            // re-matched by id rather than relying on reference equality.
+            SelectedCover = previouslySelectedCoverId.HasValue
+                ? Covers.FirstOrDefault(c => c.CoverId == previouslySelectedCoverId.Value)
+                : null;
+
+            SelectedCovers.Clear();
+            foreach (var item in Covers.Where(c => previouslyMultiSelectedIds.Contains(c.CoverId)))
+            {
+                SelectedCovers.Add(item);
+            }
+
+            NotifySelectionChanged();
+
+            CurrentCover = Covers.FirstOrDefault(c => c.IsCurrent);
+            OnPropertyChanged(nameof(CurrentCover));
+            OnPropertyChanged(nameof(HasCurrentCover));
 
             CoverCountText = $"{Covers.Count} of {CoverLimitPolicy.MaxCoversPerGame} covers";
             IsEnabled = _coverService.IsEnabled(_gameId);
@@ -158,6 +248,7 @@ namespace PluginCoverShuffle.UI
             NextShuffleText = ComputeNextShuffleText(state);
 
             var overrides = _repository.GetGameConfiguration(_gameId)?.SettingsOverride;
+            IsEnabledOverridden = overrides?.Enabled != null;
             IsIntervalOverridden = overrides?.Interval != null;
             HasAnyOverride = overrides != null && (
                 overrides.Enabled != null ||
@@ -270,5 +361,174 @@ namespace PluginCoverShuffle.UI
             _repository.RemoveCover(_gameId, coverId);
             Reload();
         }
+
+        /// <summary>
+        /// Applies whichever cover is currently selected in the cover grid.
+        /// The card grid itself carries no per-card buttons (see
+        /// <see cref="SelectedCover"/>), so this is the primary action for a
+        /// single click + Enter, or a double click.
+        /// </summary>
+        public void ChooseSelectedCover()
+        {
+            if (CanApplySelectedCover)
+            {
+                ChooseCover(SelectedCover.CoverId);
+            }
+        }
+
+        /// <summary>Removes whichever cover is currently selected in the cover grid.</summary>
+        public void RemoveSelectedCover()
+        {
+            if (SelectedCover != null)
+            {
+                Remove(SelectedCover.CoverId);
+            }
+        }
+
+        /// <summary>
+        /// Toggles a cover's shuffle-pool participation without deleting it.
+        /// A disabled cover stays stored and can be re-enabled at any time;
+        /// see <see cref="Domain.Cover.IsEnabled"/>. Disabling the cover that
+        /// happens to be currently displayed is safe: it only removes the
+        /// cover from future randomized shuffles (<see cref="PlayniteCoverService.ShuffleToNextCover"/>
+        /// already filters by <c>IsEnabled</c>) - it does not touch what
+        /// Playnite is currently showing, so the game is never left pointing
+        /// at an invalid reference.
+        /// </summary>
+        public void ToggleCoverEnabled(Guid coverId)
+        {
+            var cover = _repository.GetCover(_gameId, coverId);
+            if (cover == null)
+            {
+                return;
+            }
+
+            cover.IsEnabled = !cover.IsEnabled;
+            _repository.UpdateCover(cover);
+            StatusMessage = cover.IsEnabled ? "Cover enabled for shuffling." : "Cover disabled; it will stay in the pool but won't be shuffled.";
+            Reload();
+        }
+
+        /// <summary>Toggles a cover's favourite flag. Purely organizational; never affects shuffle selection.</summary>
+        public void ToggleFavorite(Guid coverId)
+        {
+            var cover = _repository.GetCover(_gameId, coverId);
+            if (cover == null)
+            {
+                return;
+            }
+
+            cover.IsFavorite = !cover.IsFavorite;
+            _repository.UpdateCover(cover);
+            Reload();
+        }
+
+        /// <summary>
+        /// Replaces the multi-selection tracked for bulk actions. Called by
+        /// the view's code-behind from <c>ListBox.SelectionChanged</c>,
+        /// since <c>ListBox.SelectedItems</c> is not a bindable property.
+        /// </summary>
+        public void SetSelection(IEnumerable<CoverDisplayItem> items)
+        {
+            SelectedCovers.Clear();
+            if (items != null)
+            {
+                foreach (var item in items)
+                {
+                    SelectedCovers.Add(item);
+                }
+            }
+
+            NotifySelectionChanged();
+        }
+
+        private void NotifySelectionChanged()
+        {
+            OnPropertyChanged(nameof(SelectedCoverCount));
+            OnPropertyChanged(nameof(HasMultipleSelectedCovers));
+            OnPropertyChanged(nameof(CanEnableSelectedCovers));
+            OnPropertyChanged(nameof(CanDisableSelectedCovers));
+            OnPropertyChanged(nameof(CanRemoveSelectedCovers));
+            OnPropertyChanged(nameof(ShowSingleSelectionBar));
+        }
+
+        /// <summary>Enables every currently multi-selected cover for shuffling, in one batched write.</summary>
+        public void EnableSelectedCovers()
+        {
+            if (SelectedCovers.Count == 0)
+            {
+                return;
+            }
+
+            var ids = SelectedCovers.Select(c => c.CoverId).ToList();
+            _repository.ExecuteBatch(() =>
+            {
+                foreach (var coverId in ids)
+                {
+                    var cover = _repository.GetCover(_gameId, coverId);
+                    if (cover != null && !cover.IsEnabled)
+                    {
+                        cover.IsEnabled = true;
+                        _repository.UpdateCover(cover);
+                    }
+                }
+            });
+
+            StatusMessage = $"Enabled {ids.Count} cover(s) for shuffling.";
+            Reload();
+        }
+
+        /// <summary>Disables every currently multi-selected cover from shuffling, in one batched write. Never deletes anything.</summary>
+        public void DisableSelectedCovers()
+        {
+            if (SelectedCovers.Count == 0)
+            {
+                return;
+            }
+
+            var ids = SelectedCovers.Select(c => c.CoverId).ToList();
+            _repository.ExecuteBatch(() =>
+            {
+                foreach (var coverId in ids)
+                {
+                    var cover = _repository.GetCover(_gameId, coverId);
+                    if (cover != null && cover.IsEnabled)
+                    {
+                        cover.IsEnabled = false;
+                        _repository.UpdateCover(cover);
+                    }
+                }
+            });
+
+            StatusMessage = $"Disabled {ids.Count} cover(s) from shuffling.";
+            Reload();
+        }
+
+        /// <summary>
+        /// Removes every currently multi-selected cover from the pool, in
+        /// one batched write. Only ever touches the plugin's own cover
+        /// records - never Playnite's original artwork - and never deletes
+        /// the underlying files, matching the single-cover <see cref="Remove"/>.
+        /// </summary>
+        public void RemoveSelectedCovers()
+        {
+            if (SelectedCovers.Count == 0)
+            {
+                return;
+            }
+
+            var ids = SelectedCovers.Select(c => c.CoverId).ToList();
+            _repository.ExecuteBatch(() =>
+            {
+                foreach (var coverId in ids)
+                {
+                    _repository.RemoveCover(_gameId, coverId);
+                }
+            });
+
+            StatusMessage = $"Removed {ids.Count} cover(s) from the pool.";
+            Reload();
+        }
+
     }
 }

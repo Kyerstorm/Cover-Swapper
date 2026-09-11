@@ -1,40 +1,177 @@
-<Window x:Class="PluginCoverShuffle.UI.CoverShuffleManagerWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
-        Title="Cover Shuffle Manager" Height="520" Width="640" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-    </Window.Resources>
-    <DockPanel Margin="10">
-        <TextBox DockPanel.Dock="Top" x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                 Margin="0,0,0,8" />
+<UserControl x:Class="PluginCoverShuffle.UI.CoverShuffleManagerWindow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
+             MinHeight="480" MinWidth="760">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/PluginCoverShuffle;component/UI/Resources/CoverShuffleTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
 
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-            <Button Content="Enable" Width="70" Click="EnableButton_Click" />
-            <Button Content="Disable" Width="70" Margin="6,0,0,0" Click="DisableButton_Click" />
-            <TextBlock Text="Interval (hours):" VerticalAlignment="Center" Margin="16,0,4,0" />
-            <TextBox x:Name="IntervalBox" Width="50" Text="24" />
-            <Button Content="Set Interval" Margin="6,0,0,0" Click="SetIntervalButton_Click" />
-            <Button Content="Export..." Margin="16,0,0,0" Click="ExportButton_Click" />
-            <Button Content="Import..." Margin="6,0,0,0" Click="ImportButton_Click" />
-            <Button Content="Maintenance..." Margin="16,0,0,0" Click="MaintenanceButton_Click" />
-        </StackPanel>
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Margin="0,8,0,0" Opacity="0.8" />
+        <!--
+            Dashboard header: an at-a-glance rollup over every game Cover
+            Shuffle manages, computed once per Reload() - see
+            CoverShuffleManagerViewModel.GamesManagedCount and siblings.
+            "Needs attention" is paired with a glyph, not shown by color
+            alone, and only lights up when something is actually flagged.
+        -->
+        <Border Grid.Row="0" Padding="14,10" CornerRadius="4" Margin="0,0,0,12"
+                Background="{DynamicResource TextBrush}" Opacity="0.05">
+            <WrapPanel Orientation="Horizontal" AutomationProperties.Name="Cover Shuffle summary">
+                <StackPanel Margin="0,0,28,0">
+                    <TextBlock Text="{Binding GamesManagedCount}" Style="{StaticResource CoverShuffleTitleTextStyle}" FontSize="18" />
+                    <TextBlock Text="Games managed" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
+                </StackPanel>
+                <StackPanel Margin="0,0,28,0">
+                    <TextBlock Text="{Binding GamesEnabledCount}" Style="{StaticResource CoverShuffleTitleTextStyle}" FontSize="18" />
+                    <TextBlock Text="Games enabled" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
+                </StackPanel>
+                <StackPanel Margin="0,0,28,0">
+                    <TextBlock Text="{Binding TotalCoversCount}" Style="{StaticResource CoverShuffleTitleTextStyle}" FontSize="18" />
+                    <TextBlock Text="Total covers" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="{Binding GamesNeedingAttentionCount, StringFormat='&#9888; {0}'}" Style="{StaticResource CoverShuffleTitleTextStyle}" FontSize="18"
+                               Foreground="#FFC107" Visibility="{Binding HasGamesNeedingAttention, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <TextBlock Text="{Binding GamesNeedingAttentionCount}" Style="{StaticResource CoverShuffleTitleTextStyle}" FontSize="18"
+                               Visibility="{Binding HasGamesNeedingAttention, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                    <TextBlock Text="Needs attention" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
+                </StackPanel>
+            </WrapPanel>
+        </Border>
 
-        <TextBlock Text="No games are managed by Cover Shuffle yet. Enable Cover Shuffle or add a cover to a game to see it here."
-                   TextWrapping="Wrap" Opacity="0.7" Margin="0,20,0,0"
-                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
+        <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <DataGrid ItemsSource="{Binding Games}" AutoGenerateColumns="False" CanUserAddRows="False"
-                  IsReadOnly="False">
-            <DataGrid.Columns>
-                <DataGridCheckBoxColumn Binding="{Binding IsSelected}" Width="30" />
-                <DataGridTextColumn Header="Game" Binding="{Binding GameName}" Width="*" IsReadOnly="True" />
-                <DataGridTextColumn Header="Covers" Binding="{Binding CoverCount}" Width="70" IsReadOnly="True" />
-                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="80" IsReadOnly="True" />
-            </DataGrid.Columns>
-        </DataGrid>
-    </DockPanel>
-</Window>
+        <!-- Left pane: searchable game list + bulk actions -->
+        <DockPanel Grid.Column="0" LastChildFill="True">
+            <TextBlock DockPanel.Dock="Top" Text="Managed games" Style="{StaticResource CoverShuffleTitleTextStyle}" FontSize="16" Margin="0,0,0,8" />
+
+            <TextBox DockPanel.Dock="Top" x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Padding="6,4" Margin="0,0,0,8"
+                     AutomationProperties.Name="Search managed games by name" />
+
+            <!-- Filter/sort: pure client-side list narrowing over games Cover Shuffle already knows about. Never triggers a provider search. -->
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="FilterCombo" Grid.Column="0" Padding="6,4"
+                          SelectionChanged="FilterCombo_SelectionChanged"
+                          AutomationProperties.Name="Filter games">
+                    <ComboBoxItem Content="All" Tag="All" IsSelected="True" />
+                    <ComboBoxItem Content="Enabled" Tag="Enabled" />
+                    <ComboBoxItem Content="Disabled" Tag="Disabled" />
+                    <ComboBoxItem Content="No Covers" Tag="NoCovers" />
+                    <ComboBoxItem Content="Needs Attention" Tag="NeedsAttention" />
+                </ComboBox>
+                <ComboBox x:Name="SortCombo" Grid.Column="2" Padding="6,4"
+                          SelectionChanged="SortCombo_SelectionChanged"
+                          AutomationProperties.Name="Sort games">
+                    <ComboBoxItem Content="Sort: Name" Tag="Name" IsSelected="True" />
+                    <ComboBoxItem Content="Sort: Cover Count" Tag="CoverCount" />
+                    <ComboBoxItem Content="Sort: Enabled First" Tag="EnabledFirst" />
+                    <ComboBoxItem Content="Sort: Needs Attention" Tag="NeedsAttention" />
+                </ComboBox>
+            </Grid>
+
+            <ComboBox DockPanel.Dock="Top" x:Name="SourceFilterCombo" Padding="6,4" Margin="0,0,0,8"
+                      SelectionChanged="SourceFilterCombo_SelectionChanged"
+                      AutomationProperties.Name="Filter by cover source">
+                <ComboBoxItem Content="Any Source" Tag="Any" IsSelected="True" />
+                <ComboBoxItem Content="SteamGridDB" Tag="SteamGridDb" />
+                <ComboBoxItem Content="Playnite Metadata" Tag="PlayniteMetadata" />
+                <ComboBoxItem Content="Local File" Tag="LocalFile" />
+            </ComboBox>
+
+            <!-- Bulk actions operate on the checkbox column, independent of which single game is open on the right. -->
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                <Border Style="{StaticResource CoverShuffleDividerStyle}" Margin="0,0,0,8" />
+                <TextBlock Text="{Binding SelectedGamesCount, StringFormat='Bulk actions &#8226; {0} game(s) checked'}"
+                           Style="{StaticResource CoverShuffleSectionLabelTextStyle}" Margin="0,0,0,6" />
+                <WrapPanel Orientation="Horizontal">
+                    <Button Content="Enable" Padding="8,4" Margin="0,0,6,6" Click="EnableButton_Click" />
+                    <Button Content="Disable" Padding="8,4" Margin="0,0,6,6" Click="DisableButton_Click" />
+                    <Button Content="Reset Overrides" Padding="8,4" Margin="0,0,6,6" Click="ResetOverridesButton_Click"
+                            ToolTip="Clear per-game overrides for the checked games so they follow the global defaults again" />
+                    <Button Content="Export..." Padding="8,4" Margin="0,0,6,6" Click="ExportButton_Click" />
+                    <Button Content="Import..." Padding="8,4" Margin="0,0,6,6" Click="ImportButton_Click" />
+                    <Button Content="Maintenance..." Padding="8,4" Margin="0,0,6,6" Click="MaintenanceButton_Click" />
+                </WrapPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                    <TextBlock Text="Interval (hours):" VerticalAlignment="Center" Style="{StaticResource CoverShuffleBodyTextStyle}" Margin="0,0,6,0" />
+                    <TextBox x:Name="IntervalBox" Width="50" Padding="4,2" Text="24" />
+                    <Button Content="Set" Margin="6,0,0,0" Padding="8,3" Click="SetIntervalButton_Click" />
+                </StackPanel>
+                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CoverShuffleMutedTextStyle}" TextWrapping="Wrap" Margin="0,8,0,0"
+                           Visibility="{Binding StatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+
+            <!-- Empty state: no games managed at all yet. -->
+            <StackPanel DockPanel.Dock="Top" Margin="0,20,0,0"
+                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="No games yet" FontWeight="SemiBold" Style="{StaticResource CoverShuffleBodyTextStyle}" />
+                <TextBlock Text="Enable Cover Shuffle or add a cover to a game from its right-click menu to see it here." TextWrapping="Wrap"
+                           Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!-- Empty state: search text excludes every managed game. Distinct from "no games at all" above. -->
+            <StackPanel DockPanel.Dock="Top" Margin="0,20,0,0"
+                        Visibility="{Binding ShowNoSearchResults, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Style="{StaticResource CoverShuffleBodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap">
+                    <Run Text="No games match &quot;" /><Run Text="{Binding SearchText, Mode=OneWay}" /><Run Text="&quot;." />
+                </TextBlock>
+                <TextBlock Text="Try a different search, or clear it to see every managed game." TextWrapping="Wrap"
+                           Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!-- Empty state: the Needs Attention filter specifically found nothing. Distinct from the two states above. -->
+            <StackPanel DockPanel.Dock="Top" Margin="0,20,0,0"
+                        Visibility="{Binding ShowAllHealthy, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="Everything looks good." FontWeight="SemiBold" Style="{StaticResource CoverShuffleBodyTextStyle}" />
+                <TextBlock Text="No games need attention right now." TextWrapping="Wrap"
+                           Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                <ListBox x:Name="GamesList" ItemsSource="{Binding Games}"
+                         SelectedItem="{Binding SelectedGame, Mode=TwoWay}"
+                         SelectionMode="Single"
+                         Background="Transparent" BorderThickness="0"
+                         ItemContainerStyle="{StaticResource CoverShuffleGameRowStyle}"
+                         SelectionChanged="GamesList_SelectionChanged" />
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- Right pane: the selected game's full Manage Covers control centre. -->
+        <Border Grid.Column="2" BorderThickness="1" BorderBrush="{DynamicResource TextBrush}" CornerRadius="4">
+            <Grid>
+                <ContentControl x:Name="DetailHost" />
+
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="360"
+                            Visibility="{Binding HasSelectedGame, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    <TextBlock Text="Select a game" FontWeight="SemiBold" HorizontalAlignment="Center" Style="{StaticResource CoverShuffleBodyTextStyle}" />
+                    <TextBlock Text="Choose a game on the left to view and manage its cover pool, scheduling, and shuffle actions."
+                               TextWrapping="Wrap" TextAlignment="Center" Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,6,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+        </Grid>
+    </Grid>
+</UserControl>

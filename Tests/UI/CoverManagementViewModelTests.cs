@@ -283,6 +283,333 @@ namespace PluginCoverShuffle.Tests.UI
         }
 
         [Fact]
+        public void IsEnabledOverridden_DefaultsToFalse_FollowingTheGlobalDefault()
+        {
+            var gameId = Guid.NewGuid();
+            var viewModel = CreateViewModel(gameId);
+
+            Assert.False(viewModel.IsEnabledOverridden);
+            Assert.Equal("(using global default)", viewModel.EnabledSourceText);
+        }
+
+        [Fact]
+        public void IsEnabledOverridden_TrueAfterTogglingEnabled_AndClearedByResetToGlobalDefaults()
+        {
+            var gameId = Guid.NewGuid();
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.ToggleEnabled();
+
+            Assert.True(viewModel.IsEnabledOverridden);
+            Assert.Equal("(custom)", viewModel.EnabledSourceText);
+
+            viewModel.ResetToGlobalDefaults();
+
+            Assert.False(viewModel.IsEnabledOverridden);
+        }
+
+        [Fact]
+        public void SelectedCover_IsNullByDefault()
+        {
+            var gameId = Guid.NewGuid();
+            ImportCover(gameId);
+
+            var viewModel = CreateViewModel(gameId);
+
+            Assert.Null(viewModel.SelectedCover);
+            Assert.False(viewModel.HasSelectedCover);
+        }
+
+        [Fact]
+        public void SelectedCover_WhenSetToACoverThatIsNotCurrentOrMissing_AllowsApply()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == cover.CoverId);
+
+            Assert.True(viewModel.HasSelectedCover);
+            Assert.True(viewModel.CanApplySelectedCover);
+        }
+
+        [Fact]
+        public void SelectedCover_WhenAlreadyCurrent_DisallowsApply()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.ChooseCover(cover.CoverId);
+
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == cover.CoverId);
+
+            Assert.False(viewModel.CanApplySelectedCover);
+        }
+
+        [Fact]
+        public void ChooseSelectedCover_AppliesTheSelectedCover()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == second.CoverId);
+
+            viewModel.ChooseSelectedCover();
+
+            Assert.True(viewModel.Covers.Single(c => c.CoverId == second.CoverId).IsCurrent);
+            Assert.False(viewModel.Covers.Single(c => c.CoverId == first.CoverId).IsCurrent);
+        }
+
+        [Fact]
+        public void ChooseSelectedCover_WithNoSelection_DoesNothing()
+        {
+            var gameId = Guid.NewGuid();
+            ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.ChooseSelectedCover();
+
+            Assert.Null(viewModel.StatusMessage);
+        }
+
+        [Fact]
+        public void RemoveSelectedCover_RemovesTheSelectedCover_ButLeavesTheFileOnDisk()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == cover.CoverId);
+
+            viewModel.RemoveSelectedCover();
+
+            Assert.Empty(viewModel.Covers);
+            Assert.True(_storage.CoverFileExists(cover.LocalPath));
+        }
+
+        [Fact]
+        public void Reload_PreservesSelectionAcrossReloadWhenTheSelectedCoverStillExists()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == second.CoverId);
+
+            viewModel.Reload();
+
+            Assert.NotNull(viewModel.SelectedCover);
+            Assert.Equal(second.CoverId, viewModel.SelectedCover.CoverId);
+        }
+
+        [Fact]
+        public void Reload_WhenTheSelectedCoverWasRemoved_ClearsSelectionInsteadOfPointingAtAStaleItem()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == cover.CoverId);
+
+            _repository.RemoveCover(gameId, cover.CoverId);
+            viewModel.Reload();
+
+            Assert.Null(viewModel.SelectedCover);
+        }
+
+        [Fact]
+        public void CurrentCover_ReflectsWhicheverCoverWasLastApplied()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+
+            Assert.Null(viewModel.CurrentCover);
+            Assert.False(viewModel.HasCurrentCover);
+
+            viewModel.ChooseCover(cover.CoverId);
+
+            Assert.NotNull(viewModel.CurrentCover);
+            Assert.Equal(cover.CoverId, viewModel.CurrentCover.CoverId);
+            Assert.True(viewModel.HasCurrentCover);
+        }
+
+        [Fact]
+        public void CanRestoreSelectedFromSteamGridDb_OnlyOfferedForMissingSteamGridDbCovers()
+        {
+            var gameId = Guid.NewGuid();
+            var localCover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SelectedCover = viewModel.Covers.Single(c => c.CoverId == localCover.CoverId);
+
+            Assert.False(viewModel.CanRestoreSelectedFromSteamGridDb);
+        }
+
+        [Fact]
+        public void ToggleFavorite_TogglesTheFlag_AndPersistsAcrossReload()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            Assert.False(viewModel.Covers.Single().IsFavorite);
+
+            viewModel.ToggleFavorite(cover.CoverId);
+
+            Assert.True(viewModel.Covers.Single().IsFavorite);
+
+            var reloaded = CreateViewModel(gameId);
+            Assert.True(reloaded.Covers.Single().IsFavorite);
+        }
+
+        [Fact]
+        public void ToggleFavorite_DoesNotAffectShuffleEligibility()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.ToggleFavorite(cover.CoverId);
+
+            Assert.True(_repository.GetCover(gameId, cover.CoverId).IsEnabled);
+        }
+
+        [Fact]
+        public void ToggleCoverEnabled_DisablesTheCover_LeavingItInThePool()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            Assert.True(viewModel.Covers.Single().IsCoverEnabled);
+
+            viewModel.ToggleCoverEnabled(cover.CoverId);
+
+            Assert.False(viewModel.Covers.Single().IsCoverEnabled);
+            Assert.Single(_repository.GetCovers(gameId));
+        }
+
+        [Fact]
+        public void ToggleCoverEnabled_TwiceReturnsToEnabled()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.ToggleCoverEnabled(cover.CoverId);
+            viewModel.ToggleCoverEnabled(cover.CoverId);
+
+            Assert.True(viewModel.Covers.Single().IsCoverEnabled);
+        }
+
+        [Fact]
+        public void ToggleCoverEnabled_OnTheCurrentCover_LeavesItStillCurrent()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.ChooseCover(cover.CoverId);
+
+            viewModel.ToggleCoverEnabled(cover.CoverId);
+
+            var displayed = viewModel.Covers.Single();
+            Assert.True(displayed.IsCurrent);
+            Assert.False(displayed.IsCoverEnabled);
+        }
+
+        [Fact]
+        public void SetSelection_TracksTheMultiSelection()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+
+            viewModel.SetSelection(viewModel.Covers);
+
+            Assert.Equal(2, viewModel.SelectedCoverCount);
+            Assert.True(viewModel.HasMultipleSelectedCovers);
+        }
+
+        [Fact]
+        public void EnableSelectedCovers_EnablesEveryDisabledCoverInTheSelection()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.ToggleCoverEnabled(first.CoverId);
+            viewModel.ToggleCoverEnabled(second.CoverId);
+            viewModel.SetSelection(viewModel.Covers);
+
+            viewModel.EnableSelectedCovers();
+
+            Assert.All(viewModel.Covers, c => Assert.True(c.IsCoverEnabled));
+        }
+
+        [Fact]
+        public void DisableSelectedCovers_DisablesEveryEnabledCoverInTheSelection_WithoutDeletingAnything()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SetSelection(viewModel.Covers);
+
+            viewModel.DisableSelectedCovers();
+
+            Assert.All(viewModel.Covers, c => Assert.False(c.IsCoverEnabled));
+            Assert.Equal(2, _repository.GetCovers(gameId).Count);
+            Assert.True(_storage.CoverFileExists(first.LocalPath));
+            Assert.True(_storage.CoverFileExists(second.LocalPath));
+        }
+
+        [Fact]
+        public void RemoveSelectedCovers_RemovesEveryCoverInTheSelection_ButLeavesFilesOnDisk()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SetSelection(viewModel.Covers);
+
+            viewModel.RemoveSelectedCovers();
+
+            Assert.Empty(viewModel.Covers);
+            Assert.Empty(_repository.GetCovers(gameId));
+            Assert.True(_storage.CoverFileExists(first.LocalPath));
+            Assert.True(_storage.CoverFileExists(second.LocalPath));
+        }
+
+        [Fact]
+        public void RemoveSelectedCovers_NeverTouchesCoversOutsideTheSelection()
+        {
+            var gameId = Guid.NewGuid();
+            var first = ImportCover(gameId, System.Drawing.Color.Red);
+            var second = ImportCover(gameId, System.Drawing.Color.Blue);
+            var viewModel = CreateViewModel(gameId);
+            viewModel.SetSelection(viewModel.Covers.Where(c => c.CoverId == first.CoverId));
+
+            viewModel.RemoveSelectedCovers();
+
+            Assert.Single(_repository.GetCovers(gameId));
+            Assert.Equal(second.CoverId, _repository.GetCovers(gameId).Single().CoverId);
+        }
+
+        [Fact]
+        public void Reload_WhenCoverFileIsCorrupt_FlagsItAsCorruptButNotMissing()
+        {
+            var gameId = Guid.NewGuid();
+            var cover = ImportCover(gameId);
+            var absolutePath = _storage.GetAbsolutePath(cover.LocalPath);
+            File.WriteAllBytes(absolutePath, new byte[] { 0x00, 0x01, 0x02, 0x03 });
+
+            var viewModel = CreateViewModel(gameId);
+
+            var displayed = viewModel.Covers.Single();
+            Assert.False(displayed.IsFileMissing);
+            Assert.True(displayed.IsCorrupt);
+            Assert.True(displayed.IsUnavailable);
+        }
+
+        [Fact]
         public void RestoreOriginal_RestoresTheCapturedCover()
         {
             var gameId = Guid.NewGuid();

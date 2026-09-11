@@ -335,6 +335,64 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
         }
 
         [Fact]
+        public void Load_WithVersion3CoverMissingIsFavorite_DefaultsToFalse()
+        {
+            Directory.CreateDirectory(_tempDirectory);
+            var gameId = Guid.NewGuid();
+            var coverId = Guid.NewGuid();
+
+            // Shape produced before IsFavorite existed on Cover: no such
+            // property on the record at all.
+            var version3Json = @"{
+  ""SchemaVersion"": 3,
+  ""GameConfigurations"": [],
+  ""Covers"": [
+    {
+      ""CoverId"": """ + coverId + @""",
+      ""GameId"": """ + gameId + @""",
+      ""Source"": ""LocalFile"",
+      ""LocalPath"": ""cover.png"",
+      ""Hash"": ""abc"",
+      ""IsEnabled"": true
+    }
+  ],
+  ""ShuffleStates"": [],
+  ""OriginalArtworkRecords"": []
+}";
+            File.WriteAllText(_databaseFilePath, version3Json);
+
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            var loaded = repository.GetCover(gameId, coverId);
+
+            Assert.NotNull(loaded);
+            Assert.False(loaded.IsFavorite);
+        }
+
+        [Fact]
+        public void Cover_IsFavorite_RoundTripsAcrossReload()
+        {
+            var gameId = Guid.NewGuid();
+            var coverId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+            repository.AddCover(new Cover
+            {
+                CoverId = coverId,
+                GameId = gameId,
+                Source = CoverSource.LocalFile,
+                LocalPath = "cover.png",
+                Hash = "abc",
+                IsEnabled = true,
+                IsFavorite = true
+            });
+
+            var reloaded = new CoverShuffleRepository(_databaseFilePath);
+            var loaded = reloaded.GetCover(gameId, coverId);
+
+            Assert.NotNull(loaded);
+            Assert.True(loaded.IsFavorite);
+        }
+
+        [Fact]
         public void GetShuffleState_MutatingReturnedShuffleCycle_DoesNotAffectStoredState()
         {
             var gameId = Guid.NewGuid();

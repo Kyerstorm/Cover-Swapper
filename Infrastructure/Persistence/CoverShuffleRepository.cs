@@ -15,7 +15,7 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
     /// </summary>
     public class CoverShuffleRepository : ICoverShuffleRepository
     {
-        public const int CurrentSchemaVersion = 3;
+        public const int CurrentSchemaVersion = 4;
 
         private readonly string _databaseFilePath;
         private readonly object _syncRoot = new object();
@@ -275,6 +275,14 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             // enum field defaults it to ShuffleTrigger.Random, which matches
             // the actual historical behaviour (every prior shuffle was
             // engine-selected), so no explicit transform is needed.
+            //
+            // Version 3 -> 4: Cover gained IsFavorite (Stage 2 — Advanced
+            // Cover Management), a purely organizational flag distinct from
+            // IsEnabled/current/selected and not consumed by the shuffle
+            // engine. Older files have no such property; deserializing a
+            // missing bool defaults it to false, which is exactly correct
+            // (nothing could have been marked a favourite before this
+            // feature existed), so no explicit transform is needed.
             if (database.SchemaVersion > CurrentSchemaVersion)
             {
                 throw new InvalidOperationException(

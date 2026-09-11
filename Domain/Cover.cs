@@ -26,6 +26,7 @@ namespace PluginCoverShuffle.Domain
             LastUsedAt = source.LastUsedAt;
             UsageCount = source.UsageCount;
             IsEnabled = source.IsEnabled;
+            IsFavorite = source.IsFavorite;
         }
 
         /// <summary>Stable identifier for this cover within the plugin's own storage.</summary>
@@ -60,5 +61,14 @@ namespace PluginCoverShuffle.Domain
 
         /// <summary>Whether this cover currently participates in the shuffle pool.</summary>
         public bool IsEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Whether the user has marked this cover as a favourite. Purely a
+        /// UI/organizational concept in this stage: it is NOT consumed by
+        /// <see cref="Shuffling.ShuffleEngine"/> or any weighting logic, and
+        /// must not be wired into shuffle selection until a future stage
+        /// explicitly adds favourite-weighted shuffling.
+        /// </summary>
+        public bool IsFavorite { get; set; }
     }
 }

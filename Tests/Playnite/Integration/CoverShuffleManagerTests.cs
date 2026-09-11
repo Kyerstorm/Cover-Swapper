@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Persistence;
@@ -28,7 +29,7 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
             layout.EnsureDirectoriesExist();
             _storage = new CoverStorage(layout);
             _coverService = new PlayniteCoverService(_repository, _gameService, _storage, () => new CoverShuffleSettings(), new FakeCoverShuffleLogger(), new ShuffleEngine(new FakeShuffleRandomizer()));
-            _manager = new CoverShuffleManager(_repository, _coverService, _gameService);
+            _manager = new CoverShuffleManager(_repository, _coverService, _gameService, _storage);
         }
 
         public void Dispose()
@@ -107,6 +108,114 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         public void GetManagedGames_WhenNothingConfigured_ReturnsEmpty()
         {
             Assert.Empty(_manager.GetManagedGames());
+        }
+
+        [Fact]
+        public void GetManagedGames_WhenACoverFileIsMissing_FlagsTheGame()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+            var cover = _repository.GetCovers(gameId).Single();
+            System.IO.File.Delete(_storage.GetAbsolutePath(cover.LocalPath));
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.True(row.HasMissingCover);
+        }
+
+        [Fact]
+        public void GetManagedGames_WhenAllCoverFilesPresent_DoesNotFlagTheGame()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.False(row.HasMissingCover);
+        }
+
+        [Fact]
+        public void GetManagedGames_ReportsDistinctCoverSources()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.Contains(CoverSource.LocalFile, row.Sources);
+        }
+
+        [Fact]
+        public void GetManagedGames_WhenACoverFileExistsButCannotBeDecoded_FlagsItAsCorrupt()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId); // AddStoredCover writes garbage bytes, not a real image.
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.False(row.HasMissingCover);
+            Assert.True(row.HasCorruptCover);
+        }
+
+        [Fact]
+        public void GetManagedGames_WhenCurrentCoverIdDoesNotMatchAnyStoredCover_FlagsAnInvalidReference()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+            _repository.SaveShuffleState(new ShuffleState
+            {
+                GameId = gameId,
+                CurrentCoverId = Guid.NewGuid() // Not one of this game's covers.
+            });
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.True(row.HasInvalidCoverReference);
+        }
+
+        [Fact]
+        public void GetManagedGames_WhenCurrentCoverIdMatchesAStoredCover_DoesNotFlagAnInvalidReference()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+            var cover = _repository.GetCovers(gameId).Single();
+            _repository.SaveShuffleState(new ShuffleState { GameId = gameId, CurrentCoverId = cover.CoverId });
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.False(row.HasInvalidCoverReference);
+        }
+
+        [Fact]
+        public void GetManagedGames_SurfacesThePersistedNextShuffleTime()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+            var nextShuffle = DateTime.UtcNow.AddHours(3);
+            _repository.SaveShuffleState(new ShuffleState { GameId = gameId, NextShuffleAt = nextShuffle });
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.Equal(nextShuffle, row.NextShuffleAt);
+        }
+
+        [Fact]
+        public void GetManagedGames_WhenNoShuffleStateExists_LeavesNextShuffleAtNull()
+        {
+            var gameId = Guid.NewGuid();
+            _gameService.SeedGameName(gameId, "Some Game");
+            AddStoredCover(gameId);
+
+            var row = Assert.Single(_manager.GetManagedGames());
+
+            Assert.Null(row.NextShuffleAt);
         }
     }
 }

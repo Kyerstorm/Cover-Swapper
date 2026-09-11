@@ -79,5 +79,40 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
 
             Assert.Null(exception);
         }
+
+        [Fact]
+        public void ResetOverridesForAll_ClearsEveryListedGamesOverrides()
+        {
+            var gameId = Guid.NewGuid();
+            _coverService.EnableCoverShuffle(gameId);
+            _coverService.SetIntervalOverride(gameId, TimeSpan.FromHours(5));
+
+            _service.ResetOverridesForAll(new[] { gameId });
+
+            var configuration = _repository.GetGameConfiguration(gameId);
+            Assert.Null(configuration.SettingsOverride);
+        }
+
+        [Fact]
+        public void ResetOverridesForAll_OnlyAffectsListedGames()
+        {
+            var untouched = Guid.NewGuid();
+            var reset = Guid.NewGuid();
+            _coverService.SetIntervalOverride(untouched, TimeSpan.FromHours(2));
+            _coverService.SetIntervalOverride(reset, TimeSpan.FromHours(2));
+
+            _service.ResetOverridesForAll(new[] { reset });
+
+            Assert.Null(_repository.GetGameConfiguration(reset).SettingsOverride);
+            Assert.NotNull(_repository.GetGameConfiguration(untouched).SettingsOverride);
+        }
+
+        [Fact]
+        public void ResetOverridesForAll_WithEmptyList_DoesNothing()
+        {
+            var exception = Record.Exception(() => _service.ResetOverridesForAll(new Guid[0]));
+
+            Assert.Null(exception);
+        }
     }
 }

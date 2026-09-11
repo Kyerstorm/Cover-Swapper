@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -55,6 +56,19 @@ namespace PluginCoverShuffle.UI
             AddPlayniteMetadataButton.Visibility = _playniteMetadataProvider != null ? Visibility.Visible : Visibility.Collapsed;
 
             RefreshIntervalBox();
+        }
+
+        /// <summary>
+        /// Wires up the dialogs factory and owning window when this panel is
+        /// hosted directly (e.g. embedded as the Cover Shuffle Manager's
+        /// detail pane) rather than shown through the <see cref="ShowDialog"/>
+        /// helper below. Without this, "Add Cover" actions that need a
+        /// dialogs factory or an owner window silently no-op.
+        /// </summary>
+        public void AttachHost(IDialogsFactory dialogs, Window owningWindow)
+        {
+            _dialogs = dialogs;
+            _owningWindow = owningWindow;
         }
 
         /// <summary>Creates and shows this panel in a Playnite-themed modal window.</summary>
@@ -144,16 +158,161 @@ namespace PluginCoverShuffle.UI
 
         private void RestoreOriginalButton_Click(object sender, RoutedEventArgs e) => _viewModel.RestoreOriginal();
 
-        private void RemoveButton_Click(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Single click selects a card (bound via ListBox.SelectedItem);
+        /// double click opens the larger preview (Stage 2), matching the
+        /// spec's "single click = select, double click = preview" model.
+        /// "Set as Current" (the old double-click behaviour) is still one
+        /// click away via the single-selection action bar / context menu.
+        /// </summary>
+        private void CoversList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            var coverId = (Guid)((Button)sender).Tag;
-            _viewModel.Remove(coverId);
+            ShowPreview(_viewModel.SelectedCover);
         }
 
-        private void UseThisCoverButton_Click(object sender, RoutedEventArgs e)
+        /// <summary>Enter applies the selected cover; Escape is handled by the owning window (see <see cref="ShowDialog"/>).</summary>
+        private void CoversList_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            var coverId = (Guid)((Button)sender).Tag;
-            _viewModel.ChooseCover(coverId);
+            if (e.Key == Key.Enter)
+            {
+                _viewModel.ChooseSelectedCover();
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>
+        /// ListBox.SelectedItems is not a bindable property, so the
+        /// multi-selection is pushed into the view model here, mechanically,
+        /// with no business logic - see <see cref="CoverManagementViewModel.SetSelection"/>.
+        /// </summary>
+        private void CoversList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _viewModel.SetSelection(CoversList.SelectedItems.Cast<CoverDisplayItem>());
+        }
+
+        private void SelectAllCoversButton_Click(object sender, RoutedEventArgs e) => CoversList.SelectAll();
+
+        private void ClearCoverSelectionButton_Click(object sender, RoutedEventArgs e) => CoversList.UnselectAll();
+
+        private void RemoveSelectedCoverButton_Click(object sender, RoutedEventArgs e) => _viewModel.RemoveSelectedCover();
+
+        private void UseSelectedCoverButton_Click(object sender, RoutedEventArgs e) => _viewModel.ChooseSelectedCover();
+
+        private void PreviewSelectedCoverButton_Click(object sender, RoutedEventArgs e) => ShowPreview(_viewModel.SelectedCover);
+
+        private async void ReplaceSelectedCoverButton_Click(object sender, RoutedEventArgs e) => await ReplaceCoverAsync(_viewModel.SelectedCover);
+
+        private void EnableSelectedCoversButton_Click(object sender, RoutedEventArgs e) => _viewModel.EnableSelectedCovers();
+
+        private void DisableSelectedCoversButton_Click(object sender, RoutedEventArgs e) => _viewModel.DisableSelectedCovers();
+
+        private void RemoveSelectedCoversButton_Click(object sender, RoutedEventArgs e) => _viewModel.RemoveSelectedCovers();
+
+        /// <summary>
+        /// Opens the cover preview positioned on <paramref name="cover"/>,
+        /// with Previous/Next navigation across this game's whole pool and a
+        /// "Set as Current" action that reuses the exact same
+        /// <see cref="CoverManagementViewModel.ChooseCover"/> path as every
+        /// other "set as current" entry point - the preview never applies a
+        /// cover on its own. Closing the dialog otherwise leaves state
+        /// unchanged; refreshes this window once closed in case a cover was
+        /// applied from inside the preview.
+        /// </summary>
+        private void ShowPreview(CoverDisplayItem cover)
+        {
+            if (cover == null)
+            {
+                return;
+            }
+
+            var covers = _viewModel.Covers;
+            var startIndex = Math.Max(0, covers.IndexOf(cover));
+            var previewViewModel = new CoverPreviewViewModel(_viewModel.GameName, covers, startIndex, coverId => _viewModel.ChooseCover(coverId));
+            new CoverPreviewWindow(previewViewModel) { Owner = _owningWindow }.ShowDialog();
+            _viewModel.Reload();
+        }
+
+        /// <summary>
+        /// Generalized "Replace" for the context menu / action bar: reuses
+        /// the exact same safe-replace pipeline as "Locate Replacement"
+        /// (<see cref="LocalFileCoverAddService.ReplaceFromFile"/> ->
+        /// <see cref="CoverImportService.ReplaceFile"/>), just available for
+        /// any cover, not only ones already flagged missing/corrupt.
+        /// </summary>
+        private async System.Threading.Tasks.Task ReplaceCoverAsync(CoverDisplayItem cover)
+        {
+            if (_localFileCoverAddService == null || _dialogs == null || cover == null)
+            {
+                return;
+            }
+
+            var coverId = cover.CoverId;
+            var filePath = _dialogs.SelectImagefile();
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
+            }
+
+            var result = await System.Threading.Tasks.Task.Run(
+                () => _localFileCoverAddService.ReplaceFromFile(_viewModel.GameId, coverId, filePath));
+            if (!result.IsSuccess)
+            {
+                _dialogs.ShowMessage(result.Message);
+            }
+
+            _viewModel.Reload();
+        }
+
+        /// <summary>
+        /// Executed handlers for the cover card's context menu / favourite
+        /// commands (see CoverCardCommands.cs): the command's
+        /// CommandParameter carries the CoverDisplayItem the card/menu item
+        /// was invoked for.
+        /// </summary>
+        private void CoverCommand_CanExecute(object sender, CanExecuteRoutedEventArgs e) => e.CanExecute = e.Parameter is CoverDisplayItem;
+
+        private void PreviewCoverCommand_Executed(object sender, ExecutedRoutedEventArgs e) => ShowPreview(e.Parameter as CoverDisplayItem);
+
+        private void SetAsCurrentCoverCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            if (e.Parameter is CoverDisplayItem cover)
+            {
+                _viewModel.ChooseCover(cover.CoverId);
+            }
+        }
+
+        private void EnableCoverCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            if (e.Parameter is CoverDisplayItem cover)
+            {
+                _viewModel.ToggleCoverEnabled(cover.CoverId);
+            }
+        }
+
+        private void DisableCoverCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            if (e.Parameter is CoverDisplayItem cover)
+            {
+                _viewModel.ToggleCoverEnabled(cover.CoverId);
+            }
+        }
+
+        private async void ReplaceCoverCommand_Executed(object sender, ExecutedRoutedEventArgs e) => await ReplaceCoverAsync(e.Parameter as CoverDisplayItem);
+
+        private void RemoveCoverCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            if (e.Parameter is CoverDisplayItem cover)
+            {
+                _viewModel.Remove(cover.CoverId);
+            }
+        }
+
+        private void ToggleFavoriteCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            if (e.Parameter is CoverDisplayItem cover)
+            {
+                _viewModel.ToggleFavorite(cover.CoverId);
+            }
         }
 
         private void AddSteamGridDbButton_Click(object sender, RoutedEventArgs e)
@@ -194,39 +353,15 @@ namespace PluginCoverShuffle.UI
             _viewModel.Reload();
         }
 
-        private async void LocateReplacementButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_localFileCoverAddService == null || _dialogs == null)
-            {
-                return;
-            }
-
-            var coverId = (Guid)((Button)sender).Tag;
-            var filePath = _dialogs.SelectImagefile();
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                return;
-            }
-
-            var result = await System.Threading.Tasks.Task.Run(
-                () => _localFileCoverAddService.ReplaceFromFile(_viewModel.GameId, coverId, filePath));
-            if (!result.IsSuccess)
-            {
-                _dialogs.ShowMessage(result.Message);
-            }
-
-            _viewModel.Reload();
-        }
-
-        private async void RestoreFromSteamGridDbButton_Click(object sender, RoutedEventArgs e)
+        private async void RestoreFromSteamGridDbForSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             var steamGridDbProvider = _steamGridDbProvider as SteamGridDbCoverProvider;
-            if (steamGridDbProvider == null || _importService == null || _dialogs == null)
+            if (steamGridDbProvider == null || _importService == null || _dialogs == null || _viewModel.SelectedCover == null)
             {
                 return;
             }
 
-            var coverId = (Guid)((Button)sender).Tag;
+            var coverId = _viewModel.SelectedCover.CoverId;
             var gameId = _viewModel.GameId;
 
             var errorMessage = await System.Threading.Tasks.Task.Run(() =>

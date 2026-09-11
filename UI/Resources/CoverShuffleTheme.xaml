@@ -1,0 +1,273 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="clr-namespace:PluginCoverShuffle.UI">
+
+    <!--
+        Converters used by the styles below must live in THIS dictionary
+        (not the consuming window's own Resources): a StaticResource lookup
+        from inside a merged dictionary's own content can only see keys
+        within that same dictionary (and anything merged into it), not keys
+        defined by whatever later merges this dictionary in. Consuming
+        files can still reuse these same keys via StaticResource once this
+        dictionary is merged into their Resources.
+    -->
+    <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    <ui:InverseBoolConverter x:Key="InverseBoolConverter" />
+    <ui:FavoriteGlyphConverter x:Key="FavoriteGlyphConverter" />
+
+    <!--
+        Centralized visual language for Cover Shuffle's WPF windows (Stage 1 —
+        Manager/ManageCovers UI modernisation). This file intentionally does
+        NOT invent new brush resource keys that alias Playnite's own theme
+        brushes: WPF resource dictionaries cannot cleanly redirect one
+        DynamicResource to another for arbitrary property types (Background,
+        BorderBrush, Fill, ...) without risking a brush that silently stops
+        tracking theme changes. Instead this dictionary centralizes REUSABLE
+        STYLES built on top of the two Playnite theme keys already proven
+        safe and in active use across this plugin (TextBrush / TextBrushDark
+        — see SteamGridDbSearchView.xaml, the existing reference
+        implementation for card interaction). Consuming XAML should prefer
+        these styles over ad hoc opacity tricks so there is one place to
+        adjust the visual language later.
+    -->
+
+    <!-- Typography hierarchy -->
+    <Style x:Key="CoverShuffleTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="CoverShuffleSectionLabelTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Opacity" Value="0.7" />
+    </Style>
+
+    <Style x:Key="CoverShuffleBodyTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    </Style>
+
+    <Style x:Key="CoverShuffleMutedTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CoverShuffleBodyTextStyle}">
+        <Setter Property="Opacity" Value="0.65" />
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+
+    <Style x:Key="CoverShuffleDividerStyle" TargetType="Border">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Opacity" Value="0.15" />
+    </Style>
+
+    <!--
+        Whole-card, click-to-select cover tile used by the Manage Covers
+        cover grid. Mirrors the proven CoverCardStyle pattern from
+        SteamGridDbSearchView.xaml (a ListBoxItem with a fully custom
+        template so a single click anywhere on the card selects it, instead
+        of fighting a nested Button for the hit target), extended with a
+        "Current" ribbon that is deliberately distinct from the
+        selection checkmark: Current = what Playnite is showing right now;
+        Selected = what the user has clicked/focused in this session. The
+        two are unrelated and a card can be either, both, or neither.
+    -->
+    <Style x:Key="CoverShuffleCoverCardStyle" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Margin" Value="6" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleDescription}" />
+        <Setter Property="ToolTip" Value="{Binding HealthStatus}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="CardBorder" Width="150" BorderThickness="2" CornerRadius="6" Background="Transparent">
+                        <Border.ContextMenu>
+                            <!--
+                                A ContextMenu opens its own visual tree, so it does not
+                                inherit DataContext from the card it was opened on; this
+                                explicit binding recovers it from PlacementTarget (the
+                                CardBorder itself), which does have the CoverDisplayItem
+                                as its DataContext via the ListBox item template.
+                            -->
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <!--
+                                    Commands (not Click= handlers): this dictionary has no
+                                    x:Class, so WPF cannot resolve a code-behind event handler
+                                    here - see CoverCardCommands.cs. CommandParameter carries
+                                    the CoverDisplayItem to whichever window's CommandBindings
+                                    (currently only ManageCoversWindow) handles the command.
+                                -->
+                                <MenuItem Header="Preview" Command="{x:Static ui:CoverCardCommands.Preview}" CommandParameter="{Binding}" />
+                                <MenuItem Header="Set as Current" Command="{x:Static ui:CoverCardCommands.SetAsCurrent}" CommandParameter="{Binding}"
+                                          Visibility="{Binding CanSetAsCurrent, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <MenuItem Header="Enable" Command="{x:Static ui:CoverCardCommands.Enable}" CommandParameter="{Binding}"
+                                          Visibility="{Binding IsCoverEnabled, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                                <MenuItem Header="Disable" Command="{x:Static ui:CoverCardCommands.Disable}" CommandParameter="{Binding}"
+                                          Visibility="{Binding IsCoverEnabled, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <Separator />
+                                <MenuItem Header="Replace..." Command="{x:Static ui:CoverCardCommands.Replace}" CommandParameter="{Binding}" />
+                                <MenuItem Header="Remove from Pool" Command="{x:Static ui:CoverCardCommands.Remove}" CommandParameter="{Binding}" />
+                            </ContextMenu>
+                        </Border.ContextMenu>
+                        <Grid>
+                            <Border x:Name="InnerBackground" BorderThickness="0" Margin="2" CornerRadius="5"
+                                    Background="{DynamicResource TextBrush}" Opacity="0.04" />
+                            <StackPanel Margin="8">
+                                <Grid>
+                                    <Border Width="130" Height="180" CornerRadius="3" Background="{DynamicResource TextBrush}" Opacity="0.08"
+                                            Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <Image x:Name="CoverImage" Source="{Binding AbsoluteImagePath}" Width="130" Height="180" Stretch="Uniform" SnapsToDevicePixels="True"
+                                           Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+
+                                    <!-- Missing/corrupt indicator: overlays the placeholder tile above. -->
+                                    <TextBlock Text="{Binding UnavailableReasonText, StringFormat='&#9888; {0}'}" FontWeight="Bold" FontSize="12" Foreground="#FFC107"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="110" TextAlignment="Center"
+                                               Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                    <!-- Current-cover ribbon: top-left, label-based (not a checkmark) so it can never be confused with the selection badge. -->
+                                    <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0"
+                                            Background="{DynamicResource TextBrush}" Opacity="0.85"
+                                            CornerRadius="0,0,6,0"
+                                            Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="CURRENT" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource TextBrushDark}" Margin="6,3" />
+                                    </Border>
+
+                                    <!-- Selection checkmark badge: top-right, only when this card is the user's active selection. -->
+                                    <Border x:Name="SelectedBadge" Width="24" Height="24" CornerRadius="12"
+                                            Background="{DynamicResource TextBrush}"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
+                                            Visibility="Collapsed">
+                                        <TextBlock Text="&#10003;" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource TextBrushDark}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <!--
+                                        Favourite star: bottom-left, deliberately far from the
+                                        current ribbon / selection badge so the three never
+                                        overlap. A real Button (not an image glyph glued to a
+                                        handler routed elsewhere), so it always toggles
+                                        favourite state and never silently no-ops. Uses a
+                                        Command rather than Click= for the same x:Class-less
+                                        dictionary reason as the context menu above.
+                                    -->
+                                    <Button x:Name="FavoriteButton" Width="26" Height="26" Padding="0"
+                                            HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="4"
+                                            Background="{DynamicResource TextBrush}" Opacity="0.85" BorderThickness="0"
+                                            Content="{Binding IsFavorite, Converter={StaticResource FavoriteGlyphConverter}}"
+                                            Command="{x:Static ui:CoverCardCommands.ToggleFavorite}" CommandParameter="{Binding}"
+                                            ToolTip="Toggle favourite"
+                                            AutomationProperties.Name="Toggle favourite">
+                                        <Button.Resources>
+                                            <Style TargetType="Border">
+                                                <Setter Property="CornerRadius" Value="13" />
+                                            </Style>
+                                        </Button.Resources>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Text="{Binding Source}" FontSize="11" Foreground="{DynamicResource TextBrush}" Margin="0,6,0,0" />
+                                <TextBlock Text="{Binding UsageCount, StringFormat='Used {0} time(s)'}" FontSize="11"
+                                           Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
+                                <TextBlock Text="{Binding CoverEnabledStatusText}" FontSize="11"
+                                           Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="SelectedBadge" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="False">
+                            <Setter TargetName="CardBorder" Property="BorderBrush">
+                                <Setter.Value>
+                                    <SolidColorBrush Color="Transparent" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="InnerBackground" Property="Opacity" Value="0.10" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                            <Setter TargetName="CardBorder" Property="BorderThickness" Value="1" />
+                        </Trigger>
+                        <DataTrigger Binding="{Binding IsCoverEnabled}" Value="False">
+                            <Setter TargetName="CoverImage" Property="Opacity" Value="0.45" />
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        Left-pane game row for the Cover Shuffle Manager's two-pane layout.
+        Same whole-row-click philosophy as the cover cards above, adapted to
+        a vertical list (name + "N covers - Enabled/Disabled" subtitle
+        instead of cover art), and a distinct "checked for bulk action"
+        indicator (the existing checkbox) from "selected for the detail
+        pane" (the row highlight), which are different concepts: a user can
+        check several rows for a bulk enable/disable while only one row at a
+        time is open in the detail pane on the right.
+    -->
+    <Style x:Key="CoverShuffleGameRowStyle" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="AutomationProperties.Name" Value="{Binding GameName}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="RowBorder" BorderThickness="1" CornerRadius="4" Padding="10,8"
+                            BorderBrush="Transparent" Background="Transparent">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                      AutomationProperties.Name="Select for bulk action" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock x:Name="RowText" Text="{Binding GameName}" FontSize="13" Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="RowSubText" FontSize="11" Opacity="0.65" Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis">
+                                    <Run Text="{Binding CoverCount, Mode=OneWay}" /><Run Text=" cover(s) &#8226; " /><Run Text="{Binding Status, Mode=OneWay}" />
+                                </TextBlock>
+                                <!-- Only shown when the scheduler actually has a persisted next-shuffle time for an enabled game; never invented. -->
+                                <TextBlock x:Name="RowNextShuffleText" Text="{Binding NextShuffleText}" FontSize="11" Opacity="0.65" Foreground="{DynamicResource TextBrush}"
+                                           Margin="0,1,0,0" TextTrimming="CharacterEllipsis"
+                                           Visibility="{Binding NextShuffleText, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <!-- Needs Attention reason: paired with the "⚠" glyph AND text, never color alone. -->
+                                <TextBlock x:Name="RowWarningText" Text="{Binding AttentionReasonText, StringFormat='&#9888; {0}'}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="#FFC107" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"
+                                           Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="RowBorder" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                            <Setter TargetName="RowBorder" Property="Background" Value="{DynamicResource TextBrush}" />
+                            <Setter TargetName="RowBorder" Property="Opacity" Value="0.85" />
+                            <Setter TargetName="RowText" Property="Foreground" Value="{DynamicResource TextBrushDark}" />
+                            <Setter TargetName="RowSubText" Property="Foreground" Value="{DynamicResource TextBrushDark}" />
+                            <Setter TargetName="RowSubText" Property="Opacity" Value="0.85" />
+                            <Setter TargetName="RowNextShuffleText" Property="Foreground" Value="{DynamicResource TextBrushDark}" />
+                            <Setter TargetName="RowNextShuffleText" Property="Opacity" Value="0.85" />
+                            <Setter TargetName="RowWarningText" Property="Foreground" Value="{DynamicResource TextBrushDark}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="RowBorder" Property="Background" Value="{DynamicResource TextBrush}" />
+                            <Setter TargetName="RowBorder" Property="Opacity" Value="0.10" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="RowBorder" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

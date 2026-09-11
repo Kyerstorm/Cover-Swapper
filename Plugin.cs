@@ -129,7 +129,7 @@ namespace PluginCoverShuffle
                 GameInstallationService = new GameInstallationService(Repository, newGameConfigurationService, _logger);
                 GameLaunchShuffleService = new GameLaunchShuffleService(CoverService, _logger, gameService, notificationService);
 
-                Manager = new CoverShuffleManager(Repository, CoverService, gameService);
+                Manager = new CoverShuffleManager(Repository, CoverService, gameService, Storage);
                 BulkConfigurationService = new BulkConfigurationService(CoverService, _logger);
                 ImportExportService = new ImportExportService(Repository, Storage, _logger);
                 MaintenanceService = new MaintenanceService(Repository, Storage, layout, _logger);
@@ -179,7 +179,20 @@ namespace PluginCoverShuffle
                     try
                     {
                         var viewModel = new CoverShuffleManagerViewModel(Manager, BulkConfigurationService, ImportExportService, PlayniteApi.Dialogs);
-                        new CoverShuffleManagerWindow(viewModel, MaintenanceService, PlayniteApi.Dialogs).ShowDialog();
+                        var localFileCoverAddService = ImportService != null ? new LocalFileCoverAddService(ImportService) : null;
+                        CoverShuffleManagerWindow.ShowDialog(
+                            PlayniteApi.Dialogs,
+                            viewModel,
+                            MaintenanceService,
+                            Repository,
+                            Storage,
+                            CoverService,
+                            BulkConfigurationService,
+                            SteamGridDbProvider,
+                            PlayniteMetadataProvider,
+                            ImportService,
+                            localFileCoverAddService,
+                            _logger);
                     }
                     catch (Exception ex)
                     {

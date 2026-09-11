@@ -4,33 +4,53 @@
              xmlns:ui="clr-namespace:PluginCoverShuffle.UI"
              MinWidth="560" MinHeight="480">
     <UserControl.Resources>
-        <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-        <ui:StatusDotBrushConverter x:Key="StatusDotBrushConverter" />
-        <ui:InverseBoolConverter x:Key="InverseBoolConverter" />
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/PluginCoverShuffle;component/UI/Resources/CoverShuffleTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
 
-        <!--
-            Cover cards are a plain ItemsControl, not a ListBox: this panel
-            has no click-to-select behavior (only a per-card Remove button),
-            so there is no ListBoxItem chrome to fight for text contrast.
-        -->
-        <Style x:Key="CoverCardBorderStyle" TargetType="Border">
-            <Setter Property="Width" Value="150" />
-            <Setter Property="Margin" Value="0,0,12,12" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="BorderBrush" Value="{DynamicResource TextBrush}" />
-            <Setter Property="Padding" Value="8" />
-        </Style>
+            <ui:StatusDotBrushConverter x:Key="StatusDotBrushConverter" />
+            <ui:InverseBoolConverter x:Key="InverseBoolConverter" />
+        </ResourceDictionary>
     </UserControl.Resources>
+
+    <UserControl.CommandBindings>
+        <!-- Handles the cover card's context menu / favourite commands (see CoverCardCommands.cs). -->
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.Preview}" Executed="PreviewCoverCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.SetAsCurrent}" Executed="SetAsCurrentCoverCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.Enable}" Executed="EnableCoverCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.Disable}" Executed="DisableCoverCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.Replace}" Executed="ReplaceCoverCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.Remove}" Executed="RemoveCoverCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+        <CommandBinding Command="{x:Static ui:CoverCardCommands.ToggleFavorite}" Executed="ToggleFavoriteCommand_Executed" CanExecute="CoverCommand_CanExecute" />
+    </UserControl.CommandBindings>
 
     <DockPanel Margin="16" LastChildFill="True">
 
-        <!-- Header -->
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <TextBlock Text="{Binding GameName}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" />
-            <TextBlock Text="Cover Shuffle" Opacity="0.7" Foreground="{DynamicResource TextBrush}" Margin="0,2,0,0" />
-            <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource TextBrush}" Opacity="0.15" />
-        </StackPanel>
+        <!-- Header: game name + large current-cover preview, clearly distinct from the collection thumbnails below. -->
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Width="96" Height="134" CornerRadius="4" Margin="0,0,14,0"
+                    Background="{DynamicResource TextBrush}" Opacity="0.06">
+                <Grid>
+                    <Image Source="{Binding CurrentCover.AbsoluteImagePath}" Stretch="Uniform"
+                           Visibility="{Binding HasCurrentCover, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <TextBlock Text="No current cover" FontSize="10" Opacity="0.6" TextAlignment="Center" TextWrapping="Wrap" Margin="6"
+                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"
+                               Visibility="{Binding HasCurrentCover, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding GameName}" Style="{StaticResource CoverShuffleTitleTextStyle}" />
+                <TextBlock Text="Cover Shuffle" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" Margin="0,2,0,0" />
+            </StackPanel>
+        </Grid>
+        <Border DockPanel.Dock="Top" Style="{StaticResource CoverShuffleDividerStyle}" Margin="0,0,0,14" />
 
         <!-- Status / scheduling / interval -->
         <Grid DockPanel.Dock="Top" Margin="0,0,0,14">
@@ -41,28 +61,29 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0">
-                <TextBlock Text="Status" Opacity="0.7" Foreground="{DynamicResource TextBrush}" FontSize="11" />
+                <TextBlock Text="Status" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                     <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,6,0"
                              Fill="{Binding IsEnabled, Converter={StaticResource StatusDotBrushConverter}}" />
-                    <TextBlock Text="{Binding StatusText}" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" />
                 </StackPanel>
+                <TextBlock Text="{Binding EnabledSourceText}" Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,4,0,0" />
                 <Button x:Name="ToggleEnabledButton" Content="{Binding ToggleEnabledButtonText}" Width="90"
                         HorizontalAlignment="Left" Margin="0,6,0,0" Padding="0,4" Click="ToggleEnabledButton_Click" />
             </StackPanel>
 
             <StackPanel Grid.Column="1">
-                <TextBlock Text="Next shuffle" Opacity="0.7" Foreground="{DynamicResource TextBrush}" FontSize="11" />
-                <TextBlock Text="{Binding NextShuffleText}" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,4,0,0" />
+                <TextBlock Text="Next shuffle" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
+                <TextBlock Text="{Binding NextShuffleText}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,4,0,0" />
             </StackPanel>
 
             <StackPanel Grid.Column="2">
-                <TextBlock Text="Interval (hours)" Opacity="0.7" Foreground="{DynamicResource TextBrush}" FontSize="11" />
+                <TextBlock Text="Interval (hours)" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                     <TextBox x:Name="IntervalBox" Width="56" Padding="4,2" />
                     <Button Content="Apply" Margin="6,0,0,0" Padding="6,2" Click="ApplyIntervalButton_Click" />
                 </StackPanel>
-                <TextBlock Text="{Binding IntervalSourceText}" Opacity="0.6" Foreground="{DynamicResource TextBrush}" FontSize="10" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding IntervalSourceText}" Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,4,0,0" />
                 <Button Content="Reset to Global Defaults" Margin="0,6,0,0" Padding="0,4" HorizontalAlignment="Left"
                         IsEnabled="{Binding HasAnyOverride}" Click="ResetToGlobalDefaultsButton_Click" />
             </StackPanel>
@@ -70,7 +91,7 @@
 
         <!-- Add Cover / Shuffle actions -->
         <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-            <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource TextBrush}" Opacity="0.15" />
+            <Border Style="{StaticResource CoverShuffleDividerStyle}" Margin="0,0,0,10" />
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                 <Button x:Name="AddSteamGridDbButton" Content="+ SteamGridDB" Padding="8,5" Margin="0,0,8,0" Click="AddSteamGridDbButton_Click" />
@@ -80,75 +101,77 @@
 
             <StackPanel Orientation="Horizontal">
                 <Button Content="Shuffle Now" Padding="10,6" Margin="0,0,8,0" Click="ShuffleNowButton_Click" />
-                <Button Content="Restore Original" Padding="10,6" IsEnabled="{Binding HasSavedOriginal}" Click="RestoreOriginalButton_Click" />
+                <Button Content="Restore Original" Padding="10,6" Margin="0,0,8,0" IsEnabled="{Binding HasSavedOriginal}" Click="RestoreOriginalButton_Click" />
             </StackPanel>
 
-            <TextBlock Text="{Binding StatusMessage}" Opacity="0.8" Margin="0,8,0,0" Foreground="{DynamicResource TextBrush}"
+            <!-- Per-selection action bar: appears only when exactly one cover is selected, so cards themselves never need nested buttons. -->
+            <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="4" Background="{DynamicResource TextBrush}" Opacity="0.06"
+                    Visibility="{Binding ShowSingleSelectionBar, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Selected cover:" Foreground="{DynamicResource TextBrush}" Opacity="0.75" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <Button Content="Set as Current" Padding="8,4" Margin="0,0,6,0" Click="UseSelectedCoverButton_Click"
+                            IsEnabled="{Binding CanApplySelectedCover}" />
+                    <Button Content="Preview" Padding="8,4" Margin="0,0,6,0" Click="PreviewSelectedCoverButton_Click" />
+                    <Button Content="Replace..." Padding="8,4" Margin="0,0,6,0" Click="ReplaceSelectedCoverButton_Click" />
+                    <Button Content="Restore from SteamGridDB" Padding="8,4" Margin="0,0,6,0" Click="RestoreFromSteamGridDbForSelectedButton_Click"
+                            Visibility="{Binding CanRestoreSelectedFromSteamGridDb, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <Button Content="Remove from Pool" Padding="8,4" Click="RemoveSelectedCoverButton_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- Multi-select contextual action bar: only actions that make sense for the whole checked set. -->
+            <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="4" Background="{DynamicResource TextBrush}" Opacity="0.06"
+                    Visibility="{Binding HasMultipleSelectedCovers, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding SelectedCoverCount, StringFormat='{}{0} covers selected:'}"
+                               Foreground="{DynamicResource TextBrush}" Opacity="0.75" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <Button Content="Enable" Padding="8,4" Margin="0,0,6,0" Click="EnableSelectedCoversButton_Click"
+                            Visibility="{Binding CanEnableSelectedCovers, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <Button Content="Disable" Padding="8,4" Margin="0,0,6,0" Click="DisableSelectedCoversButton_Click"
+                            Visibility="{Binding CanDisableSelectedCovers, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <Button Content="Remove from Pool" Padding="8,4" Click="RemoveSelectedCoversButton_Click"
+                            Visibility="{Binding CanRemoveSelectedCovers, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CoverShuffleBodyTextStyle}" Opacity="0.8" Margin="0,8,0,0"
                        Visibility="{Binding StatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
         </StackPanel>
 
         <!-- Covers -->
         <DockPanel>
             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                <TextBlock Text="Covers" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" />
-                <TextBlock Text="{Binding CoverCountText, StringFormat=' ({0})'}" Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Text="Covers" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Text="{Binding CoverCountText, StringFormat=' ({0})'}" Style="{StaticResource CoverShuffleSectionLabelTextStyle}" />
+                <Button Content="Select All" Padding="6,2" Margin="12,0,0,0" Click="SelectAllCoversButton_Click"
+                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                <Button Content="Clear Selection" Padding="6,2" Margin="6,0,0,0" Click="ClearCoverSelectionButton_Click"
+                        Visibility="{Binding HasSelectedCover, Converter={StaticResource BoolToVisibilityConverter}}" />
             </StackPanel>
 
-            <TextBlock DockPanel.Dock="Top" Text="No covers yet. Use one of the &quot;Add Cover&quot; buttons below to get started."
-                       TextWrapping="Wrap" Opacity="0.7" Foreground="{DynamicResource TextBrush}" Margin="0,10,0,0"
-                       Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <StackPanel DockPanel.Dock="Top" Margin="0,10,0,0" HorizontalAlignment="Left"
+                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="No covers yet" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Text="Use one of the &quot;Add Cover&quot; buttons below to build this game's cover pool." TextWrapping="Wrap"
+                           Style="{StaticResource CoverShuffleMutedTextStyle}" MaxWidth="360" Margin="0,4,0,0" />
+            </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding Covers}">
-                    <ItemsControl.ItemsPanel>
+                <ListBox x:Name="CoversList" ItemsSource="{Binding Covers}"
+                         SelectedItem="{Binding SelectedCover, Mode=TwoWay}"
+                         SelectionMode="Extended"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         Background="Transparent" BorderThickness="0"
+                         ItemContainerStyle="{StaticResource CoverShuffleCoverCardStyle}"
+                         MouseDoubleClick="CoversList_MouseDoubleClick"
+                         PreviewKeyDown="CoversList_PreviewKeyDown"
+                         SelectionChanged="CoversList_SelectionChanged">
+                    <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal" />
                         </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource CoverCardBorderStyle}">
-                                <StackPanel>
-                                    <!-- Normal cover content -->
-                                    <StackPanel Visibility="{Binding IsFileMissing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
-                                        <Grid>
-                                            <Image Source="{Binding AbsoluteImagePath}" Width="130" Height="180" Stretch="Uniform" />
-                                            <Border Width="26" Height="26" CornerRadius="13" Background="{DynamicResource TextBrush}"
-                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
-                                                    Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                <TextBlock Text="&#10003;" FontWeight="Bold" FontSize="14"
-                                                           Foreground="{DynamicResource TextBrushDark}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            </Border>
-                                        </Grid>
-                                        <TextBlock Text="{Binding Source}" FontSize="11" Foreground="{DynamicResource TextBrush}" Margin="0,6,0,0" />
-                                        <TextBlock Text="{Binding UsageCount, StringFormat='Used {0} time(s)'}" FontSize="11"
-                                                   Opacity="0.7" Foreground="{DynamicResource TextBrush}" />
-                                        <Button Content="Use This Cover" Margin="0,6,0,0" Padding="0,4" Click="UseThisCoverButton_Click"
-                                                Tag="{Binding CoverId}" IsEnabled="{Binding IsCurrent, Converter={StaticResource InverseBoolConverter}}" />
-                                        <Button Content="Remove" Margin="0,4,0,0" Padding="0,4" Click="RemoveButton_Click" Tag="{Binding CoverId}" />
-                                    </StackPanel>
-
-                                    <!-- Missing-cover content -->
-                                    <StackPanel Width="130" Visibility="{Binding IsFileMissing, Converter={StaticResource BoolToVisibilityConverter}}">
-                                        <TextBlock Text="&#9888; Missing cover" FontWeight="Bold" FontSize="12" Foreground="#FFC107" TextWrapping="Wrap" />
-                                        <TextBlock FontSize="11" Foreground="{DynamicResource TextBrush}" Margin="0,4,0,0" TextWrapping="Wrap">
-                                            <Run Text="{Binding DataContext.GameName, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}" />
-                                            <LineBreak />
-                                            <Run Text="Cover #" /><Run Text="{Binding CoverNumber, Mode=OneWay}" />
-                                        </TextBlock>
-                                        <TextBlock Text="The image file could not be found." FontSize="11" Opacity="0.8"
-                                                   Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                                        <Button Content="Locate replacement" Margin="0,8,0,0" Padding="0,4" Click="LocateReplacementButton_Click" Tag="{Binding CoverId}" />
-                                        <Button Content="Restore from SteamGridDB" Margin="0,4,0,0" Padding="0,4" Click="RestoreFromSteamGridDbButton_Click" Tag="{Binding CoverId}"
-                                                Visibility="{Binding CanRestoreFromSteamGridDb, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <Button Content="Remove from pool" Margin="0,4,0,0" Padding="0,4" Click="RemoveButton_Click" Tag="{Binding CoverId}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </ListBox.ItemsPanel>
+                </ListBox>
             </ScrollViewer>
         </DockPanel>
     </DockPanel>

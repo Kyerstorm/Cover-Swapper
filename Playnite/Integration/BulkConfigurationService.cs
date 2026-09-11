@@ -27,6 +27,9 @@ namespace PluginCoverShuffle.Playnite.Integration
         public void SetIntervalForAll(IEnumerable<Guid> gameIds, TimeSpan interval) =>
             ForEachGame(gameIds, gameId => _coverService.SetIntervalOverride(gameId, interval));
 
+        /// <summary>Clears every per-game override for each listed game, so it goes back to following global defaults for every setting.</summary>
+        public void ResetOverridesForAll(IEnumerable<Guid> gameIds) => ForEachGame(gameIds, _coverService.ResetOverridesToGlobalDefaults);
+
         private void ForEachGame(IEnumerable<Guid> gameIds, Action<Guid> action)
         {
             if (gameIds == null)
