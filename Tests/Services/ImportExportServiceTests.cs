@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using Newtonsoft.Json;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Storage;
@@ -132,6 +134,44 @@ namespace PluginCoverShuffle.Tests.Services
             var result = _service.Import(_exportDirectory);
 
             Assert.False(result.Success);
+        }
+
+        [Fact]
+        public void Import_WithPathTraversalInRelativeFilePath_SkipsCoverInsteadOfReadingOutsideFile()
+        {
+            Directory.CreateDirectory(_exportDirectory);
+            var outsideFile = Path.Combine(_tempDirectory, "outside.png");
+            File.WriteAllBytes(outsideFile, new byte[] { 9, 9, 9 });
+
+            var gameId = Guid.NewGuid();
+            var export = new CoverShuffleExport
+            {
+                GameConfigurations = new List<GameConfiguration>(),
+                Covers = new List<ExportedCover>
+                {
+                    new ExportedCover
+                    {
+                        Cover = new Cover
+                        {
+                            CoverId = Guid.NewGuid(),
+                            GameId = gameId,
+                            Source = CoverSource.LocalFile,
+                            Hash = "traversal-hash",
+                            AddedAt = DateTime.UtcNow,
+                            IsEnabled = true
+                        },
+                        // Attempts to escape the export folder and read the
+                        // file created above instead of a legitimate export.
+                        RelativeFilePath = Path.Combine("..", "outside.png")
+                    }
+                }
+            };
+            File.WriteAllText(Path.Combine(_exportDirectory, "CoverShuffle.json"), JsonConvert.SerializeObject(export, Formatting.Indented));
+
+            var result = _service.Import(_exportDirectory);
+
+            Assert.True(result.Success);
+            Assert.Empty(_repository.GetCovers(gameId));
         }
 
         [Fact]

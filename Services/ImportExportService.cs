@@ -49,7 +49,7 @@ namespace PluginCoverShuffle.Services
                     foreach (var cover in _repository.GetCovers(gameId))
                     {
                         var sourcePath = _storage.GetAbsolutePath(cover.LocalPath);
-                        if (!File.Exists(sourcePath))
+                        if (sourcePath == null || !File.Exists(sourcePath))
                         {
                             _logger.Warning($"Skipping cover '{cover.CoverId}' during export: its file is missing.");
                             continue;
@@ -138,7 +138,14 @@ namespace PluginCoverShuffle.Services
                         continue;
                     }
 
-                    var sourcePath = Path.Combine(sourceFolder, exportedCover.RelativeFilePath);
+                    var sourcePath = ResolveContainedImportPath(sourceFolder, exportedCover.RelativeFilePath);
+                    if (sourcePath == null)
+                    {
+                        _logger.Warning($"Skipping cover '{exportedCover.Cover.CoverId}' during import: its recorded path is invalid.");
+                        skippedCovers++;
+                        continue;
+                    }
+
                     if (!File.Exists(sourcePath))
                     {
                         _logger.Warning($"Skipping cover '{exportedCover.Cover.CoverId}' during import: its file is missing from the export.");
@@ -178,6 +185,27 @@ namespace PluginCoverShuffle.Services
                 _logger.Error(ex, "Cover Shuffle import failed.");
                 return ImportExportResult.Failed("Import failed partway through. See the Cover Shuffle log for details.");
             }
+        }
+
+        /// <summary>
+        /// Resolves an imported cover's recorded relative path against
+        /// <paramref name="sourceFolder"/>, returning <c>null</c> if the
+        /// result would escape that folder (e.g. a tampered "../.."
+        /// <c>CoverShuffle.json</c> file) rather than allowing an arbitrary
+        /// file elsewhere on disk to be read.
+        /// </summary>
+        private static string ResolveContainedImportPath(string sourceFolder, string relativeFilePath)
+        {
+            var rootFull = Path.GetFullPath(sourceFolder);
+            var candidateFull = Path.GetFullPath(Path.Combine(sourceFolder, relativeFilePath));
+
+            var rootWithSeparator = rootFull.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+                ? rootFull
+                : rootFull + Path.DirectorySeparatorChar;
+
+            return candidateFull.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase)
+                ? candidateFull
+                : null;
         }
     }
 }

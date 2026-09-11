@@ -27,11 +27,8 @@ namespace PluginCoverShuffle.UI
         public string FileName => Path.GetFileName(FilePath);
 
         /// <summary>
-        /// Source for the preview &lt;Image&gt;: either the file path itself
-        /// (WPF decodes PNG/JPG/BMP/GIF directly) or a pre-rendered in-memory
-        /// <see cref="System.Windows.Media.Imaging.BitmapImage"/> for WEBP
-        /// files, since WPF's built-in decoder has the same WEBP-codec
-        /// uncertainty as GDI+.
+        /// Source for the preview &lt;Image&gt;: the file path itself, which
+        /// WPF decodes directly for every currently supported extension.
         /// </summary>
         private object _thumbnailSource;
 
@@ -65,15 +62,6 @@ namespace PluginCoverShuffle.UI
             set => SetValue(ref _statusMessage, value);
         }
 
-        private bool _willBeConverted;
-
-        /// <summary>True when this file will be re-encoded to PNG on import (WEBP source).</summary>
-        public bool WillBeConverted
-        {
-            get => _willBeConverted;
-            set => SetValue(ref _willBeConverted, value);
-        }
-
         private bool _willBeResized;
 
         /// <summary>True when this file's pixel dimensions exceed the policy max and will be downscaled on import.</summary>
@@ -93,10 +81,7 @@ namespace PluginCoverShuffle.UI
                 switch (Status)
                 {
                     case LocalFileCandidateStatus.Valid:
-                        return WillBeConverted && WillBeResized ? "Will be converted & resized"
-                            : WillBeConverted ? "Will be converted to PNG"
-                            : WillBeResized ? "Will be resized"
-                            : "Ready";
+                        return WillBeResized ? "Will be resized" : "Ready";
                     case LocalFileCandidateStatus.Invalid:
                         return "Not a valid image";
                     case LocalFileCandidateStatus.TooLarge:

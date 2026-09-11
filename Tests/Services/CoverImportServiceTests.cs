@@ -179,6 +179,37 @@ namespace PluginCoverShuffle.Tests.Services
         }
 
         [Fact]
+        public void ReplaceFile_WhenSaveFails_PreservesTheOriginalFile()
+        {
+            var gameId = Guid.NewGuid();
+            var original = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() }).Cover;
+            var oldAbsolutePath = _storage.GetAbsolutePath(original.LocalPath);
+            var oldBytes = File.ReadAllBytes(oldAbsolutePath);
+
+            // TIFF decodes fine via GDI+ (so it passes image validation) but
+            // is not in CoverImportPolicy.AllowedExtensions, so SaveCoverFile
+            // rejects it - simulating a failure that happens after
+            // validation succeeds but before the new file is actually
+            // stored. The existing cover must survive that failure.
+            var replacementFile = Path.Combine(_tempDirectory, Guid.NewGuid().ToString("N") + ".tiff");
+            using (var bitmap = new Bitmap(4, 4))
+            {
+                bitmap.SetPixel(0, 0, Color.FromArgb(10, 20, 30));
+                bitmap.Save(replacementFile, ImageFormat.Tiff);
+            }
+
+            var result = _service.ReplaceFile(gameId, original.CoverId, replacementFile);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(CoverImportStatus.InvalidImage, result.Status);
+            Assert.True(File.Exists(oldAbsolutePath));
+            Assert.Equal(oldBytes, File.ReadAllBytes(oldAbsolutePath));
+
+            var stillTracked = _repository.GetCover(gameId, original.CoverId);
+            Assert.Equal(original.LocalPath, stillTracked.LocalPath);
+        }
+
+        [Fact]
         public void ReplaceFile_WithUnknownCoverId_FailsWithCoverNotFound()
         {
             var gameId = Guid.NewGuid();
@@ -247,6 +278,27 @@ namespace PluginCoverShuffle.Tests.Services
 
             Assert.False(result.IsSuccess);
             Assert.Equal(CoverImportStatus.FileTooLarge, result.Status);
+            Assert.Empty(_repository.GetCovers(gameId));
+        }
+
+        [Fact]
+        public void Import_ImageBeyondDecodeCeiling_IsRejectedInsteadOfDownscaled()
+        {
+            var gameId = Guid.NewGuid();
+            var filePath = Path.Combine(_tempDirectory, "beyond-decode-ceiling.bmp");
+            // A thin strip keeps the actual pixel buffer tiny while still
+            // declaring a width past MaxDecodeDimensionPixels, exercising the
+            // cheap dimension pre-check without allocating a huge bitmap in
+            // the test itself.
+            using (var bitmap = new Bitmap(CoverImportPolicy.MaxDecodeDimensionPixels + 1, 1))
+            {
+                bitmap.Save(filePath, ImageFormat.Bmp);
+            }
+
+            var result = _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = filePath });
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(CoverImportStatus.InvalidImage, result.Status);
             Assert.Empty(_repository.GetCovers(gameId));
         }
 

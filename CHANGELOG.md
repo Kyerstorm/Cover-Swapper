@@ -9,6 +9,29 @@ section in `README.md` for what bumps each part.
 > from `1.0.0` to `1.2.0` in an early commit, skipping a proper minor bump for
 > an intermediate change. That gap is intentional and not a missing entry.
 
+## [Unreleased]
+
+### Fixed
+
+- Database saves now use a crash-safe file replace instead of a
+  delete-then-move sequence, so an interrupted save can no longer leave the
+  plugin with no database file at all.
+- Cover file paths read back from the database or an imported backup are now
+  validated to stay within plugin-owned storage before being used, closing a
+  path-traversal gap a corrupted or tampered record could otherwise exploit.
+- Replacing a cover's file now saves the new file before removing the old
+  one, so a failed replace can no longer destroy an existing cover.
+- Oversized images are now rejected before the expensive full image decode
+  runs, rather than after, bounding worst-case memory use for a small file
+  with an enormous declared resolution.
+
+### Removed
+
+- WEBP is no longer listed as a supported local-import format. GDI+ (the
+  underlying decoder on most Windows installs) cannot reliably decode WEBP,
+  so the previously advertised WEBP-to-PNG conversion did not actually work
+  for real WEBP files. Supported formats are now PNG, JPG, JPEG, BMP, and GIF.
+
 ## [1.3.0] - 2026-09-11
 
 ### Added

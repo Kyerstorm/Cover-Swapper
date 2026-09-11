@@ -326,10 +326,16 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
 
             if (File.Exists(_databaseFilePath))
             {
-                File.Delete(_databaseFilePath);
+                // File.Replace performs the swap as a single filesystem
+                // operation, so a crash mid-write can never leave zero
+                // database files on disk (unlike a separate delete + move).
+                File.Replace(tempFilePath, _databaseFilePath, null);
+            }
+            else
+            {
+                File.Move(tempFilePath, _databaseFilePath);
             }
 
-            File.Move(tempFilePath, _databaseFilePath);
             PersistCallCount++;
         }
 

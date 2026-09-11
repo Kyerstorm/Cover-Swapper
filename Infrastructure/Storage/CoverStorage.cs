@@ -6,9 +6,14 @@ namespace PluginCoverShuffle.Infrastructure.Storage
 {
     /// <summary>
     /// File-system implementation of <see cref="ICoverStorage"/>. Stored file
-    /// names are always derived from <see cref="Guid"/> identifiers rather
-    /// than external input, so no additional path sanitization is required
-    /// beyond validating the file extension.
+    /// names written by <see cref="SaveCoverFile"/> are always derived from
+    /// <see cref="Guid"/> identifiers rather than external input, so no
+    /// additional sanitization is required there beyond validating the file
+    /// extension. However, <see cref="Domain.Cover.LocalPath"/> values read
+    /// back out of the persisted database (or an imported backup) are
+    /// external input by the time they reach this class, so every method
+    /// that resolves a stored relative path is guarded against escaping the
+    /// storage root.
     /// </summary>
     public class CoverStorage : ICoverStorage
     {
@@ -46,7 +51,7 @@ namespace PluginCoverShuffle.Infrastructure.Storage
         public void DeleteCoverFile(string relativePath)
         {
             var absolutePath = GetAbsolutePath(relativePath);
-            if (File.Exists(absolutePath))
+            if (absolutePath != null && File.Exists(absolutePath))
             {
                 File.Delete(absolutePath);
             }
@@ -59,12 +64,29 @@ namespace PluginCoverShuffle.Infrastructure.Storage
                 throw new ArgumentException("Relative path must be provided.", nameof(relativePath));
             }
 
-            return Path.Combine(_layout.RootPath, relativePath);
+            var rootFull = Path.GetFullPath(_layout.RootPath);
+            var candidateFull = Path.GetFullPath(Path.Combine(_layout.RootPath, relativePath));
+
+            var rootWithSeparator = rootFull.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+                ? rootFull
+                : rootFull + Path.DirectorySeparatorChar;
+
+            if (!candidateFull.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+            {
+                // A corrupted database entry or a maliciously crafted import
+                // file could otherwise smuggle a "../.." path here. Treat it
+                // as unresolvable rather than touching a file outside plugin
+                // storage; callers already handle a not-found cover file.
+                return null;
+            }
+
+            return candidateFull;
         }
 
         public bool CoverFileExists(string relativePath)
         {
-            return File.Exists(GetAbsolutePath(relativePath));
+            var absolutePath = GetAbsolutePath(relativePath);
+            return absolutePath != null && File.Exists(absolutePath);
         }
     }
 }

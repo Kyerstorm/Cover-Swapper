@@ -18,7 +18,12 @@ namespace PluginCoverShuffle.Infrastructure.Storage
         /// <summary>Deletes a previously stored cover file, if it exists.</summary>
         void DeleteCoverFile(string relativePath);
 
-        /// <summary>Resolves a storage-relative path to an absolute file path.</summary>
+        /// <summary>
+        /// Resolves a storage-relative path to an absolute file path, or
+        /// <c>null</c> if <paramref name="relativePath"/> would resolve
+        /// outside plugin-owned storage (e.g. a corrupted or tampered
+        /// record containing path-traversal segments).
+        /// </summary>
         string GetAbsolutePath(string relativePath);
 
         /// <summary>Returns whether a stored cover file exists.</summary>

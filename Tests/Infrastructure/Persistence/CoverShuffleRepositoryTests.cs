@@ -459,6 +459,28 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Persistence
         }
 
         [Fact]
+        public void Persist_CalledTwice_UsesReplaceOnSecondWriteAndKeepsDataValid()
+        {
+            var gameId = Guid.NewGuid();
+            var repository = new CoverShuffleRepository(_databaseFilePath);
+
+            // First mutation: no destination file exists yet, so Persist()
+            // takes the File.Move branch.
+            repository.SaveGameConfiguration(new GameConfiguration { GameId = gameId, SettingsOverride = new GameSettingsOverride { Enabled = true } });
+            Assert.True(File.Exists(_databaseFilePath));
+
+            // Second mutation: the destination now exists, so Persist() must
+            // take the crash-safe File.Replace branch instead.
+            var cover = NewCover(gameId);
+            repository.AddCover(cover);
+
+            Assert.False(File.Exists(_databaseFilePath + ".tmp"));
+            var reloaded = new CoverShuffleRepository(_databaseFilePath);
+            Assert.NotNull(reloaded.GetGameConfiguration(gameId));
+            Assert.Single(reloaded.GetCovers(gameId));
+        }
+
+        [Fact]
         public void OriginalArtwork_SavedThenCleared_IsNoLongerRetrievable()
         {
             var gameId = Guid.NewGuid();

@@ -83,5 +83,60 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Storage
             var relativePath = Path.Combine("Covers", Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N") + ".png");
             _storage.DeleteCoverFile(relativePath);
         }
+
+        [Fact]
+        public void GetAbsolutePath_WithTraversalSegments_ReturnsNullInsteadOfEscapingRoot()
+        {
+            var traversalPath = Path.Combine("..", "..", "outside.png");
+
+            Assert.Null(_storage.GetAbsolutePath(traversalPath));
+        }
+
+        [Fact]
+        public void GetAbsolutePath_WithRootedPath_ReturnsNullInsteadOfEscapingRoot()
+        {
+            var outsideDirectory = Path.Combine(Path.GetTempPath(), "CoverShuffleOutside_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(outsideDirectory);
+            try
+            {
+                var rootedPath = Path.Combine(outsideDirectory, "outside.png");
+
+                Assert.Null(_storage.GetAbsolutePath(rootedPath));
+            }
+            finally
+            {
+                Directory.Delete(outsideDirectory, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void CoverFileExists_WithTraversalSegments_ReturnsFalseInsteadOfThrowing()
+        {
+            var traversalPath = Path.Combine("..", "..", "outside.png");
+
+            Assert.False(_storage.CoverFileExists(traversalPath));
+        }
+
+        [Fact]
+        public void DeleteCoverFile_WithTraversalSegments_DoesNotDeleteAnythingOutsideRoot()
+        {
+            var outsideDirectory = Path.Combine(Path.GetTempPath(), "CoverShuffleOutside_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(outsideDirectory);
+            try
+            {
+                var outsideFile = Path.Combine(outsideDirectory, "outside.png");
+                File.WriteAllBytes(outsideFile, new byte[] { 9, 9, 9 });
+
+                var traversalPath = Path.Combine("..", Path.GetFileName(outsideDirectory), "outside.png");
+
+                _storage.DeleteCoverFile(traversalPath);
+
+                Assert.True(File.Exists(outsideFile));
+            }
+            finally
+            {
+                Directory.Delete(outsideDirectory, recursive: true);
+            }
+        }
     }
 }

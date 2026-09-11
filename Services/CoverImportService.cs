@@ -153,14 +153,21 @@ namespace PluginCoverShuffle.Services
                 string relativePath;
                 try
                 {
-                    // Best-effort: drop the old file first so a changed
-                    // extension doesn't leave an orphaned copy behind.
-                    _storage.DeleteCoverFile(existing.LocalPath);
+                    // Save the replacement first so a failure here never
+                    // destroys the existing cover file. SaveCoverFile
+                    // overwrites in place when the extension is unchanged;
+                    // the old file is only removed afterward, and only when
+                    // it was left behind by an extension change.
                     relativePath = _storage.SaveCoverFile(gameId, coverId, workingFilePath);
                 }
                 catch (NotSupportedException ex)
                 {
                     return CoverImportResult.Failed(CoverImportStatus.InvalidImage, ex.Message);
+                }
+
+                if (!string.Equals(relativePath, existing.LocalPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _storage.DeleteCoverFile(existing.LocalPath);
                 }
 
                 existing.LocalPath = relativePath;
@@ -176,6 +183,20 @@ namespace PluginCoverShuffle.Services
         {
             try
             {
+                // Read dimensions first without forcing a full pixel-data
+                // decode (validateImageData: false), so an image with a
+                // small compressed size but an enormous declared resolution
+                // is rejected before the expensive full decode below runs.
+                using (var probeStream = File.OpenRead(filePath))
+                using (var probe = System.Drawing.Image.FromStream(probeStream, useEmbeddedColorManagement: false, validateImageData: false))
+                {
+                    if (probe.Width > CoverImportPolicy.MaxDecodeDimensionPixels
+                        || probe.Height > CoverImportPolicy.MaxDecodeDimensionPixels)
+                    {
+                        return false;
+                    }
+                }
+
                 using (var stream = File.OpenRead(filePath))
                 using (System.Drawing.Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: true))
                 {

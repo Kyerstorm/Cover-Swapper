@@ -81,9 +81,9 @@ namespace PluginCoverShuffle.Tests.Services
         }
 
         [Fact]
-        public void Normalize_CorruptBytesWithWebpExtension_ReturnsFailure()
+        public void Normalize_CorruptBytes_ReturnsFailure()
         {
-            var filePath = Path.Combine(_tempDirectory, "corrupt.webp");
+            var filePath = Path.Combine(_tempDirectory, "corrupt.png");
             File.WriteAllBytes(filePath, new byte[] { 0x00, 0x01, 0x02, 0x03 });
 
             var result = _service.Normalize(filePath);

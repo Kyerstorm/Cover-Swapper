@@ -2,11 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Infrastructure.Logging;
 using PluginCoverShuffle.Infrastructure.Persistence;
@@ -18,9 +16,8 @@ namespace PluginCoverShuffle.UI
     /// Backs the "Add Local Covers" dialog: turns dropped/picked files into
     /// previewed candidates (extension, size, duplicate, and dimension
     /// checks) and commits the valid ones. Contains no WPF dependency beyond
-    /// <see cref="ObservableObject"/> and <see cref="BitmapImage"/> (used
-    /// only to pre-render WEBP thumbnails), so it is testable without a
-    /// real window.
+    /// <see cref="ObservableObject"/>, so it is testable without a real
+    /// window.
     /// </summary>
     public class AddLocalCoversViewModel : ObservableObject
     {
@@ -191,13 +188,7 @@ namespace PluginCoverShuffle.UI
                 return;
             }
 
-            candidate.WillBeConverted = extension == ".webp";
             candidate.WillBeResized = width > CoverImportPolicy.MaxImageDimensionPixels || height > CoverImportPolicy.MaxImageDimensionPixels;
-
-            if (candidate.WillBeConverted)
-            {
-                candidate.ThumbnailSource = (object)TryRenderThumbnail(candidate.FilePath) ?? candidate.FilePath;
-            }
 
             var hash = CoverHashUtility.ComputeHash(candidate.FilePath);
             _hashesByCandidate[candidate] = hash;
@@ -228,31 +219,6 @@ namespace PluginCoverShuffle.UI
         {
             candidate.Status = LocalFileCandidateStatus.Invalid;
             candidate.StatusMessage = message;
-        }
-
-        private static BitmapImage TryRenderThumbnail(string webpFilePath)
-        {
-            try
-            {
-                using (var image = Image.FromFile(webpFilePath))
-                using (var memoryStream = new MemoryStream())
-                {
-                    image.Save(memoryStream, ImageFormat.Png);
-                    memoryStream.Position = 0;
-
-                    var bitmapImage = new BitmapImage();
-                    bitmapImage.BeginInit();
-                    bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmapImage.StreamSource = memoryStream;
-                    bitmapImage.EndInit();
-                    bitmapImage.Freeze();
-                    return bitmapImage;
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
         }
 
         private void RefreshCapacityState()
