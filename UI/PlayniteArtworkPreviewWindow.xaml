@@ -1,0 +1,28 @@
+<Window x:Class="PluginCoverShuffle.UI.PlayniteArtworkPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Artwork Preview" Height="520" Width="440" MinHeight="360" MinWidth="320"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/PluginCoverShuffle;component/UI/Resources/CoverShuffleTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <DockPanel Margin="16" LastChildFill="True">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock x:Name="GameNameText" Style="{StaticResource CoverShuffleTitleTextStyle}" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="ArtworkNameText" Style="{StaticResource CoverShuffleMutedTextStyle}" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <Button DockPanel.Dock="Bottom" Content="Close" Padding="14,6" HorizontalAlignment="Right" Margin="0,14,0,0"
+                Click="CloseButton_Click" IsDefault="True" IsCancel="True" />
+
+        <Grid>
+            <Border CornerRadius="4" Background="{DynamicResource TextBrush}" Opacity="0.06" />
+            <Image x:Name="PreviewImage" Stretch="Uniform" Margin="8" />
+        </Grid>
+    </DockPanel>
+</Window>

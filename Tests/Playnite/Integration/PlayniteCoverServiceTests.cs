@@ -444,6 +444,201 @@ namespace PluginCoverShuffle.Tests.Playnite.Integration
         }
 
         [Fact]
+        public void TryApplyInitialShuffle_FirstValidCover_AppliesItAndReturnsTrue()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            var cover = AddStoredCover(gameId);
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.True(applied);
+            Assert.Equal(_storage.GetAbsolutePath(cover.LocalPath), _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_RecordsInitialAsTheShuffleTrigger()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+
+            _service.TryApplyInitialShuffle(gameId);
+
+            var state = _repository.GetShuffleState(gameId);
+            Assert.Equal(ShuffleTrigger.Initial, state.LastShuffleTrigger);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_CreatesFullShuffleState()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true, Interval = TimeSpan.FromHours(6) };
+            var gameId = Guid.NewGuid();
+            var cover = AddStoredCover(gameId);
+            var before = DateTime.UtcNow;
+
+            _service.TryApplyInitialShuffle(gameId);
+
+            var state = _repository.GetShuffleState(gameId);
+            Assert.Equal(cover.CoverId, state.CurrentCoverId);
+            Assert.NotNull(state.LastShuffleAt);
+            Assert.InRange(state.NextShuffleAt.Value, before.AddHours(6).AddMinutes(-1), before.AddHours(6).AddMinutes(1));
+            Assert.NotNull(state.ShuffleCycle);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_CapturesOriginalCoverFirst()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            AddStoredCover(gameId);
+
+            _service.TryApplyInitialShuffle(gameId);
+
+            Assert.True(_service.HasSavedOriginalCover(gameId));
+            Assert.Equal("original-cover.png", _repository.GetOriginalArtwork(gameId).OriginalCoverReference);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_TracksUsageOnTheAppliedCover()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            var cover = AddStoredCover(gameId);
+
+            _service.TryApplyInitialShuffle(gameId);
+
+            var updated = _repository.GetCover(gameId, cover.CoverId);
+            Assert.Equal(1, updated.UsageCount);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_SecondCover_DoesNotChangeTheAppliedCover()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            var first = AddStoredCover(gameId);
+
+            var firstApplied = _service.TryApplyInitialShuffle(gameId);
+            var second = AddStoredCover(gameId);
+            var secondApplied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.True(firstApplied);
+            Assert.False(secondApplied);
+            Assert.Equal(_storage.GetAbsolutePath(first.LocalPath), _gameService.GetCoverReference(gameId));
+            Assert.Equal(first.CoverId, _repository.GetShuffleState(gameId).CurrentCoverId);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_ThirdCover_StillDoesNotChangeTheAppliedCover()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            var first = AddStoredCover(gameId);
+            _service.TryApplyInitialShuffle(gameId);
+            AddStoredCover(gameId);
+            _service.TryApplyInitialShuffle(gameId);
+
+            AddStoredCover(gameId);
+            var thirdApplied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.False(thirdApplied);
+            Assert.Equal(first.CoverId, _repository.GetShuffleState(gameId).CurrentCoverId);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_WhenAShuffleStateAlreadyExists_DoesNothing()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            var first = AddStoredCover(gameId);
+            _service.ShuffleToNextCover(gameId);
+            var stateBefore = _repository.GetShuffleState(gameId);
+            AddStoredCover(gameId);
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.False(applied);
+            Assert.Equal(stateBefore.CurrentCoverId, _repository.GetShuffleState(gameId).CurrentCoverId);
+            Assert.Equal(ShuffleTrigger.Random, _repository.GetShuffleState(gameId).LastShuffleTrigger);
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_WhenCoverShuffleDisabled_DoesNothing()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = false };
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            AddStoredCover(gameId);
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.False(applied);
+            Assert.Null(_repository.GetShuffleState(gameId));
+            Assert.Equal("original-cover.png", _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_WithNoCovers_DoesNothing()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.False(applied);
+            Assert.Null(_repository.GetShuffleState(gameId));
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_WithOnlyDisabledCovers_DoesNothing()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            var cover = AddStoredCover(gameId);
+            cover.IsEnabled = false;
+            _repository.UpdateCover(cover);
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.False(applied);
+            Assert.Null(_repository.GetShuffleState(gameId));
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_WithOnlyAMissingCoverFile_DoesNothing_AndDoesNotCreateState()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            _gameService.SeedCoverReference(gameId, "original-cover.png");
+            var cover = AddStoredCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(cover.LocalPath));
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.False(applied);
+            Assert.Null(_repository.GetShuffleState(gameId));
+            Assert.Equal("original-cover.png", _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
+        public void TryApplyInitialShuffle_WithOneCoverMissingAndAnotherPresent_AppliesThePresentOne()
+        {
+            _globalSettings = new CoverShuffleSettings { Enabled = true };
+            var gameId = Guid.NewGuid();
+            var missing = AddStoredCover(gameId);
+            var present = AddStoredCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(missing.LocalPath));
+
+            var applied = _service.TryApplyInitialShuffle(gameId);
+
+            Assert.True(applied);
+            Assert.Equal(_storage.GetAbsolutePath(present.LocalPath), _gameService.GetCoverReference(gameId));
+        }
+
+        [Fact]
         public void ChooseCover_RemovesTheChosenCoverFromTheShuffleCycle_SoItIsNotImmediatelyRepeated()
         {
             var gameId = Guid.NewGuid();

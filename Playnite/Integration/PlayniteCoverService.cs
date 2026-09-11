@@ -6,6 +6,7 @@ using PluginCoverShuffle.Domain.Shuffling;
 using PluginCoverShuffle.Infrastructure.Logging;
 using PluginCoverShuffle.Infrastructure.Persistence;
 using PluginCoverShuffle.Infrastructure.Storage;
+using PluginCoverShuffle.Services;
 
 namespace PluginCoverShuffle.Playnite.Integration
 {
@@ -13,8 +14,11 @@ namespace PluginCoverShuffle.Playnite.Integration
     /// Coordinates taking control of and restoring a game's cover artwork.
     /// This is the only place that decides when Cover Shuffle is allowed to
     /// overwrite a game's cover and when the original must be restored.
+    /// Also implements <see cref="IInitialShuffleTrigger"/>, the port
+    /// <see cref="CoverImportService"/> uses to apply a game's very first
+    /// usable cover automatically.
     /// </summary>
-    public class PlayniteCoverService
+    public class PlayniteCoverService : IInitialShuffleTrigger
     {
         private readonly ICoverShuffleRepository _repository;
         private readonly IPlayniteGameService _gameService;
@@ -106,9 +110,69 @@ namespace PluginCoverShuffle.Playnite.Integration
             // original must be captured first even if Enable was never used.
             CaptureOriginalCoverIfMissing(gameId);
 
-            var coverIds = covers.Select(c => c.CoverId).ToList();
             var state = _repository.GetShuffleState(gameId);
-            var cycleState = state;
+            if (!TryPickNextValidCover(gameId, covers, state, out var selected, out var remainingCycle))
+            {
+                return ShuffleResult.Failed(
+                    "None of this game's covers could be found on disk. Open \"Manage Covers\" or run Maintenance to clean up missing covers.");
+            }
+
+            return ApplySelectedCover(gameId, selected, remainingCycle, ShuffleTrigger.Random);
+        }
+
+        /// <summary>
+        /// Applies the game's very first usable cover automatically, so the
+        /// user never has to press "Shuffle Now" just to see their first
+        /// added cover take effect. Fires only when the game is enabled, has
+        /// at least one valid enabled cover, AND has no persisted
+        /// <see cref="Domain.ShuffleState"/> at all - deliberately not a
+        /// "cover count == 1" check, which would be unreliable for a game
+        /// that already had several covers imported (e.g. via Add All)
+        /// before its very first shuffle. Once any shuffle happens (this
+        /// one included) a state exists and this never fires again for that
+        /// game, so adding a second or third cover afterwards never
+        /// auto-changes the current cover.
+        /// </summary>
+        /// <returns>True if a cover was applied.</returns>
+        public bool TryApplyInitialShuffle(Guid gameId)
+        {
+            if (!IsEnabled(gameId) || _repository.GetShuffleState(gameId) != null)
+            {
+                return false;
+            }
+
+            var covers = _repository.GetCovers(gameId).Where(c => c.IsEnabled).ToList();
+            if (covers.Count == 0)
+            {
+                return false;
+            }
+
+            if (!TryPickNextValidCover(gameId, covers, null, out var selected, out var remainingCycle))
+            {
+                return false;
+            }
+
+            // Applying a cover overwrites Game.CoverImage, so the true
+            // original must be captured first even if Enable was never used.
+            CaptureOriginalCoverIfMissing(gameId);
+
+            ApplySelectedCover(gameId, selected, remainingCycle, ShuffleTrigger.Initial);
+            return true;
+        }
+
+        /// <summary>See <see cref="IInitialShuffleTrigger"/>.</summary>
+        void IInitialShuffleTrigger.TriggerIfNeeded(Guid gameId) => TryApplyInitialShuffle(gameId);
+
+        /// <summary>
+        /// Shared "pick the shuffle engine's next cover, skipping any whose
+        /// file has gone missing" loop used by both a normal shuffle and the
+        /// initial shuffle, so the randomized-selection logic (and the
+        /// missing-file skip behaviour) exists in exactly one place.
+        /// </summary>
+        private bool TryPickNextValidCover(Guid gameId, IReadOnlyList<Cover> covers, ShuffleState startState, out Cover selected, out IReadOnlyList<Guid> remainingCycle)
+        {
+            var coverIds = covers.Select(c => c.CoverId).ToList();
+            var cycleState = startState;
 
             // A cover's file can vanish outside the plugin (manual deletion,
             // a sync tool, antivirus quarantine). Applying a reference to a
@@ -118,27 +182,30 @@ namespace PluginCoverShuffle.Playnite.Integration
             for (var attempt = 0; attempt < coverIds.Count; attempt++)
             {
                 var advance = _shuffleEngine.GetNext(coverIds, cycleState);
-                var selected = covers.First(c => c.CoverId == advance.SelectedCoverId);
+                var candidate = covers.First(c => c.CoverId == advance.SelectedCoverId);
 
-                if (!_storage.CoverFileExists(selected.LocalPath))
+                if (!_storage.CoverFileExists(candidate.LocalPath))
                 {
-                    _logger.Warning($"Cover '{selected.CoverId}' for game '{gameId}' is missing its file; skipping it. Run Maintenance to clean up invalid cover records.");
+                    _logger.Warning($"Cover '{candidate.CoverId}' for game '{gameId}' is missing its file; skipping it. Run Maintenance to clean up invalid cover records.");
                     cycleState = new ShuffleState
                     {
                         GameId = gameId,
-                        CurrentCoverId = state?.CurrentCoverId,
-                        LastShuffleAt = state?.LastShuffleAt,
-                        NextShuffleAt = state?.NextShuffleAt,
+                        CurrentCoverId = startState?.CurrentCoverId,
+                        LastShuffleAt = startState?.LastShuffleAt,
+                        NextShuffleAt = startState?.NextShuffleAt,
                         ShuffleCycle = advance.RemainingCycle.ToList()
                     };
                     continue;
                 }
 
-                return ApplySelectedCover(gameId, selected, advance.RemainingCycle, ShuffleTrigger.Random);
+                selected = candidate;
+                remainingCycle = advance.RemainingCycle;
+                return true;
             }
 
-            return ShuffleResult.Failed(
-                "None of this game's covers could be found on disk. Open \"Manage Covers\" or run Maintenance to clean up missing covers.");
+            selected = null;
+            remainingCycle = null;
+            return false;
         }
 
         /// <summary>
@@ -208,7 +275,8 @@ namespace PluginCoverShuffle.Playnite.Integration
                 LastShuffleTrigger = trigger
             });
 
-            _logger.Info($"{(trigger == ShuffleTrigger.Manual ? "Manually chose" : "Shuffled to")} cover '{selected.CoverId}' for game '{gameId}'.");
+            var verb = trigger == ShuffleTrigger.Manual ? "Manually chose" : trigger == ShuffleTrigger.Initial ? "Applied initial" : "Shuffled to";
+            _logger.Info($"{verb} cover '{selected.CoverId}' for game '{gameId}'.");
             return ShuffleResult.Ok();
         }
 

@@ -135,7 +135,8 @@ namespace PluginCoverShuffle.Playnite.Integration
                     MenuSection = MenuSectionName + "|Add Cover",
                     Action = args => ForEachGame(args, id =>
                     {
-                        var viewModel = new PlayniteMetadataCoverViewModel(id, _playniteMetadataProvider, _importService, _repository, _logger);
+                        var gameName = _gameService?.GetGameName(id);
+                        var viewModel = new PlayniteMetadataCoverViewModel(id, gameName, _playniteMetadataProvider, _importService, _repository, _logger);
                         new PlayniteMetadataCoverWindow(viewModel).ShowDialog();
                     })
                 });

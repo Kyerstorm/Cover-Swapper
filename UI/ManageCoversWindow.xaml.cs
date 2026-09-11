@@ -336,7 +336,7 @@ namespace PluginCoverShuffle.UI
             }
 
             var metadataViewModel = new PlayniteMetadataCoverViewModel(
-                _viewModel.GameId, _playniteMetadataProvider, _importService, _repository, _logger);
+                _viewModel.GameId, _viewModel.GameName, _playniteMetadataProvider, _importService, _repository, _logger);
             new PlayniteMetadataCoverWindow(metadataViewModel) { Owner = _owningWindow }.ShowDialog();
             _viewModel.Reload();
         }

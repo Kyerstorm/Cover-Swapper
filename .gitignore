@@ -3,6 +3,10 @@ obj/
 *.user
 .vs/
 
+# Transient projects the WPF markup compiler generates next to the .csproj
+# during a build; never meant to be checked in.
+*_wpftmp.csproj
+
 # Deployed alongside extension.yaml so Playnite can load the plugin directly
 # (Playnite resolves Module: relative to extension.yaml, not bin/<Configuration>/).
 /PluginCoverShuffle.dll

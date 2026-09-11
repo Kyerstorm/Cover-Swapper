@@ -1,15 +1,27 @@
+using System;
+// Removing this using reintroduces a local Roslyn/MSBuild resolution
+// failure on this file (CS0246 on ObservableObject) that appears tied to
+// the exact set of using directives present, reproducible even with a bare
+// csc.exe invocation outside of MSBuild - keep it even though nothing here
+// otherwise needs System.Collections.Generic directly.
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
 using System.Windows;
 using Playnite.SDK;
+using PluginCoverShuffle.Playnite.Integration;
 using PluginCoverShuffle.Services;
 
 namespace PluginCoverShuffle.UI
 {
     /// <summary>
-    /// Backs the Maintenance window: shows what <see cref="MaintenanceService.Scan"/>
-    /// found and requires an explicit confirmed click before deleting
-    /// anything — never automatic. Contains no WPF dependency beyond
+    /// Backs the Maintenance window: a health summary plus three selectable
+    /// issue/cache lists built from <see cref="MaintenanceService.Scan"/>.
+    /// Every destructive action operates only on the items the user has
+    /// checked and requires an explicit confirmed click - nothing is ever
+    /// deleted automatically. Contains no WPF dependency beyond
     /// <see cref="ObservableObject"/> and <see cref="IDialogsFactory"/>
     /// (used only for the confirmation prompt), so it is testable without a window.
     /// </summary>
@@ -17,15 +29,44 @@ namespace PluginCoverShuffle.UI
     {
         private readonly MaintenanceService _service;
         private readonly IDialogsFactory _dialogs;
+        private readonly IPlayniteGameService _gameService;
         private MaintenanceReport _report;
 
-        public ObservableCollection<string> OrphanedFiles { get; } = new ObservableCollection<string>();
+        public ObservableCollection<MaintenanceIssueItem> MissingCoverItems { get; } = new ObservableCollection<MaintenanceIssueItem>();
 
-        public ObservableCollection<string> InvalidRecordDescriptions { get; } = new ObservableCollection<string>();
+        public ObservableCollection<MaintenanceIssueItem> OrphanedFileItems { get; } = new ObservableCollection<MaintenanceIssueItem>();
 
-        public ObservableCollection<string> CacheFiles { get; } = new ObservableCollection<string>();
+        public ObservableCollection<MaintenanceIssueItem> CacheFileItems { get; } = new ObservableCollection<MaintenanceIssueItem>();
+
+        public int ManagedGamesCount => _report?.ManagedGamesCount ?? 0;
+
+        public int TotalCoversCount => _report?.TotalCoversCount ?? 0;
+
+        public int ValidCoversCount => _report?.ValidCoversCount ?? 0;
+
+        public int MissingFilesCount => MissingCoverItems.Count;
+
+        public int OrphanedFilesCount => OrphanedFileItems.Count;
+
+        public int CacheFilesCount => CacheFileItems.Count;
+
+        public string CoverStorageSizeText => FormatBytes(_report?.CoverStorageSizeBytes ?? 0);
+
+        public string CacheStorageSizeText => FormatBytes(_report?.CacheStorageSizeBytes ?? 0);
+
+        public bool HasIssues => _report != null && _report.HasIssues;
+
+        public bool IsHealthy => _report != null && !_report.HasIssues;
+
+        public int IssueCount => _report?.IssueCount ?? 0;
 
         public bool IsEmpty => _report != null && _report.IsEmpty;
+
+        public int SelectedMissingCount => MissingCoverItems.Count(i => i.IsSelected);
+
+        public int SelectedOrphanedCount => OrphanedFileItems.Count(i => i.IsSelected);
+
+        public int SelectedCacheCount => CacheFileItems.Count(i => i.IsSelected);
 
         private string _statusMessage;
 
@@ -35,88 +76,193 @@ namespace PluginCoverShuffle.UI
             set => SetValue(ref _statusMessage, value);
         }
 
-        public MaintenanceViewModel(MaintenanceService service, IDialogsFactory dialogs)
+        public MaintenanceViewModel(MaintenanceService service, IDialogsFactory dialogs, IPlayniteGameService gameService = null)
         {
-            _service = service;
-            _dialogs = dialogs;
+            _service = service ?? throw new ArgumentNullException(nameof(service));
+            _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
+            _gameService = gameService;
             Scan();
         }
 
         public void Scan()
         {
+            UnhookItems(MissingCoverItems);
+            UnhookItems(OrphanedFileItems);
+            UnhookItems(CacheFileItems);
+
             _report = _service.Scan();
 
-            OrphanedFiles.Clear();
-            foreach (var file in _report.OrphanedCoverFiles)
-            {
-                OrphanedFiles.Add(file);
-            }
-
-            InvalidRecordDescriptions.Clear();
+            MissingCoverItems.Clear();
             foreach (var cover in _report.InvalidCoverRecords)
             {
-                InvalidRecordDescriptions.Add($"Cover {cover.CoverId} (game {cover.GameId}) — file missing");
+                AddItem(MissingCoverItems, MaintenanceIssueItem.ForMissingCover(cover, ResolveGameName(cover.GameId)));
             }
 
-            CacheFiles.Clear();
-            foreach (var file in _report.CacheFiles)
+            OrphanedFileItems.Clear();
+            foreach (var filePath in _report.OrphanedCoverFiles)
             {
-                CacheFiles.Add(file);
+                AddItem(OrphanedFileItems, MaintenanceIssueItem.ForOrphanedFile(filePath, ResolveGameName(TryExtractGameId(filePath))));
             }
 
-            StatusMessage = _report.IsEmpty
-                ? "Nothing to clean up."
-                : $"{OrphanedFiles.Count} orphaned file(s), {InvalidRecordDescriptions.Count} invalid record(s), {CacheFiles.Count} cache file(s).";
+            CacheFileItems.Clear();
+            foreach (var filePath in _report.CacheFiles)
+            {
+                AddItem(CacheFileItems, MaintenanceIssueItem.ForCacheFile(filePath));
+            }
 
+            StatusMessage = null;
+            RaiseAllPropertiesChanged();
+        }
+
+        public void SelectAllMissing(bool selected) => SetAllSelected(MissingCoverItems, selected);
+
+        public void SelectAllOrphaned(bool selected) => SetAllSelected(OrphanedFileItems, selected);
+
+        public void SelectAllCache(bool selected) => SetAllSelected(CacheFileItems, selected);
+
+        public void RemoveSelectedMissingRecords()
+        {
+            var selected = MissingCoverItems.Where(i => i.IsSelected).ToList();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            if (!Confirm($"Remove {selected.Count} cover record(s) whose file is missing? The (already-missing) files are unaffected."))
+            {
+                return;
+            }
+
+            _service.RemoveInvalidCoverRecords(selected.Select(i => i.Cover));
+            StatusMessage = $"Removed {selected.Count} cover record(s).";
+            Scan();
+        }
+
+        public void DeleteSelectedOrphanedFiles()
+        {
+            var selected = OrphanedFileItems.Where(i => i.IsSelected).ToList();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            if (!Confirm($"Permanently delete {selected.Count} orphaned cover file(s) from disk? This cannot be undone."))
+            {
+                return;
+            }
+
+            _service.DeleteOrphanedCoverFiles(selected.Select(i => i.FilePath));
+            StatusMessage = $"Deleted {selected.Count} orphaned file(s).";
+            Scan();
+        }
+
+        public void DeleteSelectedCacheFiles()
+        {
+            var selected = CacheFileItems.Where(i => i.IsSelected).ToList();
+            if (selected.Count == 0)
+            {
+                return;
+            }
+
+            if (!Confirm($"Delete {selected.Count} cached file(s)? They will be re-downloaded automatically if needed again."))
+            {
+                return;
+            }
+
+            _service.DeleteCacheFiles(selected.Select(i => i.FilePath));
+            StatusMessage = $"Deleted {selected.Count} cache file(s).";
+            Scan();
+        }
+
+        private void SetAllSelected(ObservableCollection<MaintenanceIssueItem> items, bool selected)
+        {
+            foreach (var item in items)
+            {
+                item.IsSelected = selected;
+            }
+        }
+
+        private void AddItem(ObservableCollection<MaintenanceIssueItem> collection, MaintenanceIssueItem item)
+        {
+            item.PropertyChanged += Item_PropertyChanged;
+            collection.Add(item);
+        }
+
+        private void UnhookItems(ObservableCollection<MaintenanceIssueItem> collection)
+        {
+            foreach (var item in collection)
+            {
+                item.PropertyChanged -= Item_PropertyChanged;
+            }
+        }
+
+        private void Item_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(MaintenanceIssueItem.IsSelected))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(SelectedMissingCount));
+            OnPropertyChanged(nameof(SelectedOrphanedCount));
+            OnPropertyChanged(nameof(SelectedCacheCount));
+        }
+
+        private string ResolveGameName(Guid? gameId)
+        {
+            if (gameId == null)
+            {
+                return "(unknown game)";
+            }
+
+            return _gameService?.GetGameName(gameId.Value) ?? "(game not found in Playnite)";
+        }
+
+        /// <summary>
+        /// An orphaned file has no cover record to read a game ID from, but
+        /// its own path is stable: <see cref="Infrastructure.Storage.CoverStorageLayout.GetGameCoversDirectory"/>
+        /// always names the containing folder after the game ID (see
+        /// <see cref="Infrastructure.Storage.CoverStorage.SaveCoverFile"/>).
+        /// </summary>
+        private static Guid? TryExtractGameId(string absoluteFilePath)
+        {
+            var directoryName = Path.GetFileName(Path.GetDirectoryName(absoluteFilePath));
+            return Guid.TryParseExact(directoryName, "N", out var gameId) ? gameId : (Guid?)null;
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            string[] units = { "B", "KB", "MB", "GB" };
+            double size = bytes;
+            var unitIndex = 0;
+            while (size >= 1024 && unitIndex < units.Length - 1)
+            {
+                size /= 1024;
+                unitIndex++;
+            }
+
+            return unitIndex == 0
+                ? $"{size:0} {units[unitIndex]}"
+                : $"{size:0.#} {units[unitIndex]}";
+        }
+
+        private void RaiseAllPropertiesChanged()
+        {
+            OnPropertyChanged(nameof(ManagedGamesCount));
+            OnPropertyChanged(nameof(TotalCoversCount));
+            OnPropertyChanged(nameof(ValidCoversCount));
+            OnPropertyChanged(nameof(MissingFilesCount));
+            OnPropertyChanged(nameof(OrphanedFilesCount));
+            OnPropertyChanged(nameof(CacheFilesCount));
+            OnPropertyChanged(nameof(CoverStorageSizeText));
+            OnPropertyChanged(nameof(CacheStorageSizeText));
+            OnPropertyChanged(nameof(HasIssues));
+            OnPropertyChanged(nameof(IsHealthy));
+            OnPropertyChanged(nameof(IssueCount));
             OnPropertyChanged(nameof(IsEmpty));
-        }
-
-        public void DeleteOrphanedFiles()
-        {
-            if (_report.OrphanedCoverFiles.Count == 0)
-            {
-                return;
-            }
-
-            if (!Confirm($"Permanently delete {_report.OrphanedCoverFiles.Count} orphaned cover file(s) from disk? This cannot be undone."))
-            {
-                return;
-            }
-
-            _service.DeleteOrphanedCoverFiles(_report.OrphanedCoverFiles);
-            Scan();
-        }
-
-        public void RemoveInvalidRecords()
-        {
-            if (_report.InvalidCoverRecords.Count == 0)
-            {
-                return;
-            }
-
-            if (!Confirm($"Remove {_report.InvalidCoverRecords.Count} cover record(s) whose file is missing? The (already-missing) files are unaffected."))
-            {
-                return;
-            }
-
-            _service.RemoveInvalidCoverRecords(_report.InvalidCoverRecords);
-            Scan();
-        }
-
-        public void ClearCache()
-        {
-            if (_report.CacheFiles.Count == 0)
-            {
-                return;
-            }
-
-            if (!Confirm($"Delete {_report.CacheFiles.Count} cached file(s)? They will be re-downloaded automatically if needed again."))
-            {
-                return;
-            }
-
-            _service.ClearCache();
-            Scan();
+            OnPropertyChanged(nameof(SelectedMissingCount));
+            OnPropertyChanged(nameof(SelectedOrphanedCount));
+            OnPropertyChanged(nameof(SelectedCacheCount));
         }
 
         private bool Confirm(string message)

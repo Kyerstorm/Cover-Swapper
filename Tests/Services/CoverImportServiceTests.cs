@@ -17,6 +17,7 @@ namespace PluginCoverShuffle.Tests.Services
         private readonly string _tempDirectory;
         private readonly ICoverShuffleRepository _repository;
         private readonly ICoverStorage _storage;
+        private readonly FakeInitialShuffleTrigger _initialShuffleTrigger = new FakeInitialShuffleTrigger();
         private readonly CoverImportService _service;
 
         public CoverImportServiceTests()
@@ -27,7 +28,7 @@ namespace PluginCoverShuffle.Tests.Services
             var layout = new CoverStorageLayout(Path.Combine(_tempDirectory, "storage"));
             layout.EnsureDirectoriesExist();
             _storage = new CoverStorage(layout);
-            _service = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
+            _service = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger(), new ImageNormalizationService(), _initialShuffleTrigger);
         }
 
         public void Dispose()
@@ -67,6 +68,44 @@ namespace PluginCoverShuffle.Tests.Services
             Assert.NotNull(result.Cover);
             Assert.Single(_repository.GetCovers(gameId));
             Assert.True(_storage.CoverFileExists(result.Cover.LocalPath));
+        }
+
+        [Fact]
+        public void Import_OnSuccess_NotifiesTheInitialShuffleTrigger_RegardlessOfSource()
+        {
+            var localFileGameId = Guid.NewGuid();
+            _service.Import(localFileGameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() });
+
+            var steamGridDbGameId = Guid.NewGuid();
+            _service.Import(steamGridDbGameId, new CoverAsset { Source = CoverSource.SteamGridDb, FilePath = CreateValidImageFile() });
+
+            var playniteMetadataGameId = Guid.NewGuid();
+            _service.Import(playniteMetadataGameId, new CoverAsset { Source = CoverSource.PlayniteMetadata, FilePath = CreateValidImageFile() });
+
+            Assert.Contains(localFileGameId, _initialShuffleTrigger.TriggeredGameIds);
+            Assert.Contains(steamGridDbGameId, _initialShuffleTrigger.TriggeredGameIds);
+            Assert.Contains(playniteMetadataGameId, _initialShuffleTrigger.TriggeredGameIds);
+        }
+
+        [Fact]
+        public void Import_WhenTheImportFails_DoesNotNotifyTheInitialShuffleTrigger()
+        {
+            var gameId = Guid.NewGuid();
+
+            _service.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = Path.Combine(_tempDirectory, "does-not-exist.png") });
+
+            Assert.DoesNotContain(gameId, _initialShuffleTrigger.TriggeredGameIds);
+        }
+
+        [Fact]
+        public void Import_WithoutAnInitialShuffleTriggerConfigured_StillSucceeds()
+        {
+            var serviceWithoutTrigger = new CoverImportService(_repository, _storage, new FakeCoverShuffleLogger(), new ImageNormalizationService());
+            var gameId = Guid.NewGuid();
+
+            var result = serviceWithoutTrigger.Import(gameId, new CoverAsset { Source = CoverSource.LocalFile, FilePath = CreateValidImageFile() });
+
+            Assert.True(result.IsSuccess);
         }
 
         [Fact]

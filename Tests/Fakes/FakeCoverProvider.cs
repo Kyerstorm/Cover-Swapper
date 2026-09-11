@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using PluginCoverShuffle.Domain;
 using PluginCoverShuffle.Domain.Providers;
@@ -13,6 +14,14 @@ namespace PluginCoverShuffle.Tests.Fakes
 
         public CoverDownloadResult DownloadResult { get; set; } = CoverDownloadResult.Failed("Not configured.");
 
+        /// <summary>
+        /// Optional per-asset override for tests that add several distinct
+        /// results in one batch (e.g. "Add All") and need each download to
+        /// resolve to its own file rather than the single shared
+        /// <see cref="DownloadResult"/>. Falls back to <see cref="DownloadResult"/> when unset.
+        /// </summary>
+        public Func<CoverAsset, CoverDownloadResult> DownloadResultFactory { get; set; }
+
         public int DownloadCallCount { get; private set; }
 
         public CoverSearchRequest LastSearchRequest { get; private set; }
@@ -26,7 +35,7 @@ namespace PluginCoverShuffle.Tests.Fakes
         public Task<CoverDownloadResult> DownloadAsync(CoverAsset asset)
         {
             DownloadCallCount++;
-            return Task.FromResult(DownloadResult);
+            return Task.FromResult(DownloadResultFactory != null ? DownloadResultFactory(asset) : DownloadResult);
         }
     }
 }

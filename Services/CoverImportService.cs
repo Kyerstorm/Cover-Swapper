@@ -22,13 +22,25 @@ namespace PluginCoverShuffle.Services
         private readonly ICoverStorage _storage;
         private readonly ICoverShuffleLogger _logger;
         private readonly ImageNormalizationService _normalizer;
+        private readonly IInitialShuffleTrigger _initialShuffleTrigger;
 
-        public CoverImportService(ICoverShuffleRepository repository, ICoverStorage storage, ICoverShuffleLogger logger, ImageNormalizationService normalizer)
+        public CoverImportService(
+            ICoverShuffleRepository repository,
+            ICoverStorage storage,
+            ICoverShuffleLogger logger,
+            ImageNormalizationService normalizer,
+            IInitialShuffleTrigger initialShuffleTrigger = null)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _storage = storage ?? throw new ArgumentNullException(nameof(storage));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _normalizer = normalizer ?? throw new ArgumentNullException(nameof(normalizer));
+
+            // Optional so every existing test/call site that constructs this
+            // service directly (without wiring the full Playnite integration
+            // layer) keeps working unchanged; without it, imports simply
+            // never auto-apply a first cover.
+            _initialShuffleTrigger = initialShuffleTrigger;
         }
 
         public CoverImportResult Import(Guid gameId, CoverAsset asset)
@@ -104,6 +116,23 @@ namespace PluginCoverShuffle.Services
                 }
 
                 _logger.Info($"Imported cover '{coverId}' for game '{gameId}' from {asset.Source}.");
+
+                // Centralized here (rather than in each caller/window) so
+                // every import source - local file, SteamGridDB, Playnite
+                // Metadata, automatic new-game handling, and any future
+                // provider - automatically gets the same "first usable cover
+                // becomes the active cover" behaviour with no extra wiring.
+                // A no-op for every import after the game's first (see
+                // PlayniteCoverService.TryApplyInitialShuffle).
+                try
+                {
+                    _initialShuffleTrigger?.TriggerIfNeeded(gameId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, $"Initial shuffle check failed for game '{gameId}' after importing cover '{coverId}'.");
+                }
+
                 return CoverImportResult.Ok(cover);
             });
         }

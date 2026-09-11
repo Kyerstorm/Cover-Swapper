@@ -70,6 +70,9 @@ namespace PluginCoverShuffle
         /// <summary>Reacts to newly installed games not yet known to Cover Shuffle.</summary>
         internal GameInstallationService GameInstallationService { get; private set; }
 
+        /// <summary>Restores original artwork and removes all Cover Shuffle state/files for a genuinely uninstalled game.</summary>
+        internal GameUninstallationService GameUninstallationService { get; private set; }
+
         /// <summary>Shuffles a game's cover right before it launches, for games with that option enabled.</summary>
         internal GameLaunchShuffleService GameLaunchShuffleService { get; private set; }
 
@@ -78,6 +81,9 @@ namespace PluginCoverShuffle
 
         /// <summary>Applies enable/disable/interval changes across many games at once.</summary>
         internal BulkConfigurationService BulkConfigurationService { get; private set; }
+
+        /// <summary>Shuffles many games in one operation for the Manager's "Shuffle Selected" / "Shuffle All Installed Games" actions.</summary>
+        internal BulkShuffleService BulkShuffleService { get; private set; }
 
         /// <summary>Exports/imports configuration and covers as a portable CoverShuffle.json bundle.</summary>
         internal ImportExportService ImportExportService { get; private set; }
@@ -113,7 +119,7 @@ namespace PluginCoverShuffle
                 GameService = gameService;
                 var shuffleEngine = new ShuffleEngine(new SystemRandomShuffleRandomizer());
                 CoverService = new PlayniteCoverService(Repository, gameService, Storage, GetGlobalSettings, _logger, shuffleEngine);
-                ImportService = new CoverImportService(Repository, Storage, _logger, new ImageNormalizationService());
+                ImportService = new CoverImportService(Repository, Storage, _logger, new ImageNormalizationService(), CoverService);
 
                 var steamGridDbClient = new SteamGridDbClient(_httpClient, GetSteamGridDbApiKey, _logger);
                 var steamGridDbCache = new SteamGridDbCache(layout.CachePath);
@@ -127,10 +133,12 @@ namespace PluginCoverShuffle
 
                 var newGameConfigurationService = new NewGameConfigurationService(CoverService, PlayniteMetadataProvider, ImportService, GetGlobalSettings, api.Dialogs, _logger);
                 GameInstallationService = new GameInstallationService(Repository, newGameConfigurationService, _logger);
+                GameUninstallationService = new GameUninstallationService(Repository, Storage, gameService, _logger);
                 GameLaunchShuffleService = new GameLaunchShuffleService(CoverService, _logger, gameService, notificationService);
 
                 Manager = new CoverShuffleManager(Repository, CoverService, gameService, Storage);
                 BulkConfigurationService = new BulkConfigurationService(CoverService, _logger);
+                BulkShuffleService = new BulkShuffleService(Manager, CoverService, gameService, _logger);
                 ImportExportService = new ImportExportService(Repository, Storage, _logger);
                 MaintenanceService = new MaintenanceService(Repository, Storage, layout, _logger);
                 StartupMaintenanceCheckService = new StartupMaintenanceCheckService(MaintenanceService, notificationService, GetGlobalSettings, _logger);
@@ -165,7 +173,7 @@ namespace PluginCoverShuffle
 
         public override IEnumerable<MainMenuItem> GetMainMenuItems(GetMainMenuItemsArgs args)
         {
-            if (Manager == null || BulkConfigurationService == null || ImportExportService == null || MaintenanceService == null)
+            if (Manager == null || BulkConfigurationService == null || BulkShuffleService == null || ImportExportService == null || MaintenanceService == null)
             {
                 yield break;
             }
@@ -188,10 +196,12 @@ namespace PluginCoverShuffle
                             Storage,
                             CoverService,
                             BulkConfigurationService,
+                            BulkShuffleService,
                             SteamGridDbProvider,
                             PlayniteMetadataProvider,
                             ImportService,
                             localFileCoverAddService,
+                            GameService,
                             _logger);
                     }
                     catch (Exception ex)
@@ -249,6 +259,16 @@ namespace PluginCoverShuffle
             }
 
             GameInstallationService.HandleGameInstalled(args.Game.Id, args.Game.Name);
+        }
+
+        public override void OnGameUninstalled(OnGameUninstalledEventArgs args)
+        {
+            if (GameUninstallationService == null || args?.Game == null)
+            {
+                return;
+            }
+
+            GameUninstallationService.HandleGameUninstalled(args.Game.Id, args.Game.Name);
         }
 
         public override void OnGameStarting(OnGameStartingEventArgs args)

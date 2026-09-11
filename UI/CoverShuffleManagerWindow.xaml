@@ -107,6 +107,10 @@
                 <WrapPanel Orientation="Horizontal">
                     <Button Content="Enable" Padding="8,4" Margin="0,0,6,6" Click="EnableButton_Click" />
                     <Button Content="Disable" Padding="8,4" Margin="0,0,6,6" Click="DisableButton_Click" />
+                    <Button Content="Shuffle Selected" Padding="8,4" Margin="0,0,6,6" Click="ShuffleSelectedButton_Click"
+                            ToolTip="Immediately shuffle the cover for each checked game" />
+                    <Button Content="Shuffle All Installed" Padding="8,4" Margin="0,0,6,6" Click="ShuffleAllInstalledButton_Click"
+                            ToolTip="Immediately shuffle the cover for every installed, enabled game with a usable cover" />
                     <Button Content="Reset Overrides" Padding="8,4" Margin="0,0,6,6" Click="ResetOverridesButton_Click"
                             ToolTip="Clear per-game overrides for the checked games so they follow the global defaults again" />
                     <Button Content="Export..." Padding="8,4" Margin="0,0,6,6" Click="ExportButton_Click" />

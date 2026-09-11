@@ -42,8 +42,44 @@ namespace PluginCoverShuffle.Infrastructure.Storage
 
             var destinationFileName = coverId.ToString("N") + extension;
             var destinationPath = Path.Combine(gameDirectory, destinationFileName);
+            var tempPath = destinationPath + ".tmp-" + Guid.NewGuid().ToString("N");
 
-            File.Copy(sourceFilePath, destinationPath, overwrite: true);
+            try
+            {
+                // Copy into a temp file first, then swap it into place as the
+                // final step. A replacement (Services.CoverImportService.ReplaceFile)
+                // may target this same destinationPath for an existing,
+                // currently-in-use cover; writing directly to it would leave a
+                // half-written/corrupt file in place if the copy were
+                // interrupted (crash, disk full, killed process). File.Replace
+                // performs the swap as a single filesystem operation, so the
+                // original file is never observed in a partially-written state.
+                File.Copy(sourceFilePath, tempPath, overwrite: true);
+
+                if (File.Exists(destinationPath))
+                {
+                    File.Replace(tempPath, destinationPath, null);
+                }
+                else
+                {
+                    File.Move(tempPath, destinationPath);
+                }
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    try
+                    {
+                        File.Delete(tempPath);
+                    }
+                    catch (IOException)
+                    {
+                        // Best-effort cleanup; a stray temp file is harmless
+                        // and must not fail an otherwise-successful save.
+                    }
+                }
+            }
 
             return Path.Combine("Covers", gameId.ToString("N"), destinationFileName);
         }

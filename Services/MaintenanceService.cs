@@ -40,14 +40,22 @@ namespace PluginCoverShuffle.Services
             var report = new MaintenanceReport();
             var knownRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var gameId in _repository.GetGameIdsWithCovers())
+            var gameIds = _repository.GetGameIdsWithCovers();
+            report.ManagedGamesCount = gameIds.Count;
+
+            foreach (var gameId in gameIds)
             {
                 foreach (var cover in _repository.GetCovers(gameId))
                 {
+                    report.TotalCoversCount++;
                     knownRelativePaths.Add(NormalizeRelativePath(cover.LocalPath));
                     if (!_storage.CoverFileExists(cover.LocalPath))
                     {
                         report.InvalidCoverRecords.Add(cover);
+                    }
+                    else
+                    {
+                        report.CoverStorageSizeBytes += SafeFileLength(_storage.GetAbsolutePath(cover.LocalPath));
                     }
                 }
             }
@@ -58,12 +66,42 @@ namespace PluginCoverShuffle.Services
                 if (!knownRelativePaths.Contains(relative))
                 {
                     report.OrphanedCoverFiles.Add(filePath);
+                    report.CoverStorageSizeBytes += SafeFileLength(filePath);
                 }
             }
 
-            report.CacheFiles.AddRange(SafeEnumerateFiles(_layout.CachePath));
+            foreach (var filePath in SafeEnumerateFiles(_layout.CachePath))
+            {
+                report.CacheFiles.Add(filePath);
+                report.CacheStorageSizeBytes += SafeFileLength(filePath);
+            }
 
             return report;
+        }
+
+        /// <summary>
+        /// A file can disappear or become briefly inaccessible between being
+        /// listed and having its size read (another process, a race with the
+        /// user's own cleanup). Scan results are diagnostic, so a size lookup
+        /// failure degrades to "0 bytes for this file" instead of failing the
+        /// whole scan.
+        /// </summary>
+        private long SafeFileLength(string absolutePath)
+        {
+            if (string.IsNullOrEmpty(absolutePath))
+            {
+                return 0;
+            }
+
+            try
+            {
+                return new FileInfo(absolutePath).Length;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                _logger.Warning(ex, $"Could not read the size of '{absolutePath}' during a maintenance scan.");
+                return 0;
+            }
         }
 
         /// <summary>
@@ -124,7 +162,13 @@ namespace PluginCoverShuffle.Services
                 return;
             }
 
-            foreach (var filePath in Directory.GetFiles(_layout.CachePath, "*", SearchOption.AllDirectories))
+            DeleteCacheFiles(Directory.GetFiles(_layout.CachePath, "*", SearchOption.AllDirectories));
+        }
+
+        /// <summary>Deletes the given cached files. Always safe to regenerate; caller must still have confirmed with the user.</summary>
+        public void DeleteCacheFiles(IEnumerable<string> absoluteFilePaths)
+        {
+            foreach (var filePath in absoluteFilePaths ?? Enumerable.Empty<string>())
             {
                 TryDelete(filePath);
             }

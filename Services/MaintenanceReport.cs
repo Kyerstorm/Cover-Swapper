@@ -15,6 +15,31 @@ namespace PluginCoverShuffle.Services
         /// <summary>Absolute paths of cached (re-downloadable) files under the Cache folder.</summary>
         public List<string> CacheFiles { get; set; } = new List<string>();
 
+        /// <summary>Number of distinct games Cover Shuffle has at least one cover for.</summary>
+        public int ManagedGamesCount { get; set; }
+
+        /// <summary>Total cover records across every managed game, including ones whose file is currently missing.</summary>
+        public int TotalCoversCount { get; set; }
+
+        /// <summary>Cover records whose backing file is present and intact.</summary>
+        public int ValidCoversCount => TotalCoversCount - InvalidCoverRecords.Count;
+
+        /// <summary>Combined size, in bytes, of every file actually present under the Covers folder (valid and orphaned alike).</summary>
+        public long CoverStorageSizeBytes { get; set; }
+
+        /// <summary>Combined size, in bytes, of every file under the Cache folder.</summary>
+        public long CacheStorageSizeBytes { get; set; }
+
+        /// <summary>
+        /// True when there is a genuine problem to fix (a missing cover file
+        /// or an orphaned file). Cache files are always safe/expected and are
+        /// never counted as a problem on their own.
+        /// </summary>
+        public bool HasIssues => InvalidCoverRecords.Count > 0 || OrphanedCoverFiles.Count > 0;
+
+        /// <summary>Total number of missing-cover-file and orphaned-file issues combined.</summary>
+        public int IssueCount => InvalidCoverRecords.Count + OrphanedCoverFiles.Count;
+
         public bool IsEmpty => OrphanedCoverFiles.Count == 0 && InvalidCoverRecords.Count == 0 && CacheFiles.Count == 0;
     }
 }

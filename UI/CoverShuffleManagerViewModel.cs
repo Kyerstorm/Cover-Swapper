@@ -328,7 +328,8 @@ namespace PluginCoverShuffle.UI
             }
         }
 
-        private List<Guid> SelectedGameIds() => _allGames.Where(g => g.IsSelected).Select(g => g.GameId).ToList();
+        /// <summary>Game IDs currently checked for a bulk action. Public so the window can hand them to a bulk operation (e.g. "Shuffle Selected") without the loop itself living in this view model.</summary>
+        public List<Guid> SelectedGameIds() => _allGames.Where(g => g.IsSelected).Select(g => g.GameId).ToList();
 
         public void EnableSelected()
         {

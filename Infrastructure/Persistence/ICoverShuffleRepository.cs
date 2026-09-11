@@ -18,6 +18,15 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
         void SaveGameConfiguration(GameConfiguration configuration);
 
         /// <summary>
+        /// Permanently removes the game's configuration record, e.g. as part
+        /// of uninstall cleanup. Unlike <see cref="Playnite.Integration.PlayniteCoverService.ResetOverridesToGlobalDefaults"/>
+        /// (which clears overrides but keeps the record so the game stays
+        /// known to Cover Shuffle), this makes the game look entirely unknown
+        /// again - the same as it was before Cover Shuffle ever touched it.
+        /// </summary>
+        void RemoveGameConfiguration(Guid gameId);
+
+        /// <summary>
         /// Returns every game configuration Cover Shuffle has ever saved,
         /// regardless of enabled state. Used at startup to find games that
         /// might have a shuffle due, without scanning Playnite's whole library.
@@ -53,6 +62,9 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
 
         /// <summary>Creates or replaces the game's shuffle state.</summary>
         void SaveShuffleState(ShuffleState state);
+
+        /// <summary>Permanently removes the game's shuffle state, e.g. as part of uninstall cleanup. Safe to call for a game with no saved state.</summary>
+        void RemoveShuffleState(Guid gameId);
 
         /// <summary>Returns the game's captured original artwork info, or null if none exists.</summary>
         OriginalArtworkInfo GetOriginalArtwork(Guid gameId);

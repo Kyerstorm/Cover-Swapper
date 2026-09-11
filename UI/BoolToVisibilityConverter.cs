@@ -27,6 +27,8 @@ namespace PluginCoverShuffle.UI
                     return b;
                 case string s:
                     return !string.IsNullOrEmpty(s);
+                case int i:
+                    return i != 0;
                 default:
                     return value != null;
             }

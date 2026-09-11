@@ -14,10 +14,18 @@ namespace PluginCoverShuffle.UI
             DataContext = _viewModel;
         }
 
-        private void DeleteOrphanedButton_Click(object sender, RoutedEventArgs e) => _viewModel.DeleteOrphanedFiles();
+        private void SelectAllMissingButton_Click(object sender, RoutedEventArgs e) => _viewModel.SelectAllMissing(true);
 
-        private void RemoveInvalidButton_Click(object sender, RoutedEventArgs e) => _viewModel.RemoveInvalidRecords();
+        private void RemoveMissingButton_Click(object sender, RoutedEventArgs e) => _viewModel.RemoveSelectedMissingRecords();
 
-        private void ClearCacheButton_Click(object sender, RoutedEventArgs e) => _viewModel.ClearCache();
+        private void SelectAllOrphanedButton_Click(object sender, RoutedEventArgs e) => _viewModel.SelectAllOrphaned(true);
+
+        private void DeleteOrphanedButton_Click(object sender, RoutedEventArgs e) => _viewModel.DeleteSelectedOrphanedFiles();
+
+        private void SelectAllCacheButton_Click(object sender, RoutedEventArgs e) => _viewModel.SelectAllCache(true);
+
+        private void DeleteCacheButton_Click(object sender, RoutedEventArgs e) => _viewModel.DeleteSelectedCacheFiles();
+
+        private void RescanButton_Click(object sender, RoutedEventArgs e) => _viewModel.Scan();
     }
 }

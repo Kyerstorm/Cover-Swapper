@@ -60,6 +60,15 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             }
         }
 
+        public void RemoveGameConfiguration(Guid gameId)
+        {
+            lock (_syncRoot)
+            {
+                _database.GameConfigurations.RemoveAll(g => g.GameId == gameId);
+                RequestPersist();
+            }
+        }
+
         public IReadOnlyList<GameConfiguration> GetAllGameConfigurations()
         {
             lock (_syncRoot)
@@ -161,6 +170,15 @@ namespace PluginCoverShuffle.Infrastructure.Persistence
             {
                 _database.ShuffleStates.RemoveAll(s => s.GameId == state.GameId);
                 _database.ShuffleStates.Add(Clone(state));
+                RequestPersist();
+            }
+        }
+
+        public void RemoveShuffleState(Guid gameId)
+        {
+            lock (_syncRoot)
+            {
+                _database.ShuffleStates.RemoveAll(s => s.GameId == gameId);
                 RequestPersist();
             }
         }

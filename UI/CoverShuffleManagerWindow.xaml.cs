@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -34,10 +35,12 @@ namespace PluginCoverShuffle.UI
         private readonly ICoverStorage _storage;
         private readonly PlayniteCoverService _coverService;
         private readonly BulkConfigurationService _bulkConfigurationService;
+        private readonly BulkShuffleService _bulkShuffleService;
         private readonly ICoverProvider _steamGridDbProvider;
         private readonly ICoverProvider _playniteMetadataProvider;
         private readonly CoverImportService _importService;
         private readonly LocalFileCoverAddService _localFileCoverAddService;
+        private readonly IPlayniteGameService _gameService;
         private readonly ICoverShuffleLogger _logger;
 
         private CoverManagementViewModel _detailViewModel;
@@ -51,10 +54,12 @@ namespace PluginCoverShuffle.UI
             ICoverStorage storage,
             PlayniteCoverService coverService,
             BulkConfigurationService bulkConfigurationService,
+            BulkShuffleService bulkShuffleService,
             ICoverProvider steamGridDbProvider,
             ICoverProvider playniteMetadataProvider,
             CoverImportService importService,
             LocalFileCoverAddService localFileCoverAddService,
+            IPlayniteGameService gameService,
             ICoverShuffleLogger logger)
         {
             InitializeComponent();
@@ -65,10 +70,12 @@ namespace PluginCoverShuffle.UI
             _storage = storage ?? throw new ArgumentNullException(nameof(storage));
             _coverService = coverService ?? throw new ArgumentNullException(nameof(coverService));
             _bulkConfigurationService = bulkConfigurationService ?? throw new ArgumentNullException(nameof(bulkConfigurationService));
+            _bulkShuffleService = bulkShuffleService ?? throw new ArgumentNullException(nameof(bulkShuffleService));
             _steamGridDbProvider = steamGridDbProvider;
             _playniteMetadataProvider = playniteMetadataProvider;
             _importService = importService;
             _localFileCoverAddService = localFileCoverAddService;
+            _gameService = gameService;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             DataContext = _viewModel;
         }
@@ -82,10 +89,12 @@ namespace PluginCoverShuffle.UI
             ICoverStorage storage,
             PlayniteCoverService coverService,
             BulkConfigurationService bulkConfigurationService,
+            BulkShuffleService bulkShuffleService,
             ICoverProvider steamGridDbProvider,
             ICoverProvider playniteMetadataProvider,
             CoverImportService importService,
             LocalFileCoverAddService localFileCoverAddService,
+            IPlayniteGameService gameService,
             ICoverShuffleLogger logger)
         {
             if (dialogs == null)
@@ -94,8 +103,8 @@ namespace PluginCoverShuffle.UI
             }
 
             var view = new CoverShuffleManagerWindow(
-                viewModel, maintenanceService, dialogs, repository, storage, coverService, bulkConfigurationService,
-                steamGridDbProvider, playniteMetadataProvider, importService, localFileCoverAddService, logger);
+                viewModel, maintenanceService, dialogs, repository, storage, coverService, bulkConfigurationService, bulkShuffleService,
+                steamGridDbProvider, playniteMetadataProvider, importService, localFileCoverAddService, gameService, logger);
 
             var window = dialogs.CreateWindow(new WindowCreationOptions
             {
@@ -231,8 +240,32 @@ namespace PluginCoverShuffle.UI
 
         private void MaintenanceButton_Click(object sender, RoutedEventArgs e)
         {
-            var maintenanceViewModel = new MaintenanceViewModel(_maintenanceService, _dialogs);
+            var maintenanceViewModel = new MaintenanceViewModel(_maintenanceService, _dialogs, _gameService);
             new MaintenanceWindow(maintenanceViewModel) { Owner = _owningWindow }.ShowDialog();
+            _viewModel.Reload();
+        }
+
+        private void ShuffleSelectedButton_Click(object sender, RoutedEventArgs e)
+        {
+            var ids = _viewModel.SelectedGameIds();
+            if (ids.Count == 0)
+            {
+                _viewModel.StatusMessage = "Select at least one game first.";
+                return;
+            }
+
+            RunBulkShuffle(ids, "Shuffling selected games...");
+        }
+
+        private void ShuffleAllInstalledButton_Click(object sender, RoutedEventArgs e)
+        {
+            RunBulkShuffle(null, "Shuffling installed games...");
+        }
+
+        private void RunBulkShuffle(List<Guid> gameIds, string title)
+        {
+            var progressViewModel = new BulkShuffleProgressViewModel(_bulkShuffleService, gameIds, title);
+            new BulkShuffleProgressWindow(progressViewModel) { Owner = _owningWindow }.ShowDialog();
             _viewModel.Reload();
         }
     }

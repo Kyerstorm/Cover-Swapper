@@ -142,6 +142,54 @@ namespace PluginCoverShuffle.Tests.Services
         }
 
         [Fact]
+        public void DeleteCacheFiles_OnlyRemovesTheSelectedFiles()
+        {
+            var keepPath = Path.Combine(_layout.CachePath, "keep.png");
+            var deletePath = Path.Combine(_layout.CachePath, "delete.png");
+            File.WriteAllBytes(keepPath, new byte[] { 1 });
+            File.WriteAllBytes(deletePath, new byte[] { 2 });
+
+            _service.DeleteCacheFiles(new[] { deletePath });
+
+            Assert.True(File.Exists(keepPath));
+            Assert.False(File.Exists(deletePath));
+        }
+
+        [Fact]
+        public void Scan_ComputesHealthSummaryCounts()
+        {
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+            var missingCover = AddStoredCover(gameId);
+            File.Delete(_storage.GetAbsolutePath(missingCover.LocalPath));
+            File.WriteAllBytes(Path.Combine(_layout.CachePath, "cached.png"), new byte[] { 1, 2, 3 });
+
+            var report = _service.Scan();
+
+            Assert.Equal(1, report.ManagedGamesCount);
+            Assert.Equal(2, report.TotalCoversCount);
+            Assert.Equal(1, report.ValidCoversCount);
+            Assert.True(report.CoverStorageSizeBytes > 0);
+            Assert.Equal(3, report.CacheStorageSizeBytes);
+            Assert.True(report.HasIssues);
+            Assert.Equal(1, report.IssueCount);
+        }
+
+        [Fact]
+        public void Scan_OnHealthyLibrary_HasNoIssuesEvenWithCacheFiles()
+        {
+            var gameId = Guid.NewGuid();
+            AddStoredCover(gameId);
+            File.WriteAllBytes(Path.Combine(_layout.CachePath, "cached.png"), new byte[] { 1 });
+
+            var report = _service.Scan();
+
+            Assert.False(report.HasIssues);
+            Assert.Equal(0, report.IssueCount);
+            Assert.False(report.IsEmpty);
+        }
+
+        [Fact]
         public void Scan_NeverDeletesAnything_ByItself()
         {
             var gameId = Guid.NewGuid();

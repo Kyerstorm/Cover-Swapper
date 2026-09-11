@@ -36,7 +36,8 @@ namespace PluginCoverShuffle.Playnite.Integration
             _storage = storage;
         }
 
-        public IReadOnlyList<ManagedGameSummary> GetManagedGames()
+        /// <summary>Every game ID Cover Shuffle currently manages - see <see cref="GetManagedGames"/> for the definition of "manages".</summary>
+        public IReadOnlyList<Guid> GetManagedGameIds()
         {
             var gameIds = new HashSet<Guid>(_repository.GetGameIdsWithCovers());
             foreach (var configuration in _repository.GetAllGameConfigurations())
@@ -44,7 +45,12 @@ namespace PluginCoverShuffle.Playnite.Integration
                 gameIds.Add(configuration.GameId);
             }
 
-            return gameIds
+            return gameIds.ToList();
+        }
+
+        public IReadOnlyList<ManagedGameSummary> GetManagedGames()
+        {
+            return GetManagedGameIds()
                 .Select(gameId =>
                 {
                     var covers = _repository.GetCovers(gameId);

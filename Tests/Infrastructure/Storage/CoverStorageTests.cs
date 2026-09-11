@@ -85,6 +85,41 @@ namespace PluginCoverShuffle.Tests.Infrastructure.Storage
         }
 
         [Fact]
+        public void SaveCoverFile_OverwritingExistingCover_LeavesNoTempFileBehind()
+        {
+            var gameId = Guid.NewGuid();
+            var coverId = Guid.NewGuid();
+            var relativePath = _storage.SaveCoverFile(gameId, coverId, _sourceFilePath);
+
+            var replacementFile = Path.Combine(_rootDirectory, "replacement-cover.png");
+            File.WriteAllBytes(replacementFile, new byte[] { 5, 6, 7, 8, 9 });
+            _storage.SaveCoverFile(gameId, coverId, replacementFile);
+
+            var absolutePath = _storage.GetAbsolutePath(relativePath);
+            Assert.Equal(File.ReadAllBytes(replacementFile), File.ReadAllBytes(absolutePath));
+
+            var gameDirectory = Path.GetDirectoryName(absolutePath);
+            Assert.DoesNotContain(Directory.GetFiles(gameDirectory), f => f.Contains(".tmp-"));
+        }
+
+        [Fact]
+        public void GetAbsolutePath_WithDriveRelativePath_ReturnsNullInsteadOfEscapingRoot()
+        {
+            // "C:foo" (no separator after the drive letter) is a Windows
+            // drive-relative path: Path.Combine treats it as already rooted
+            // and ignores the storage root entirely, so this must be caught
+            // by the resolved-path containment check rather than assumed
+            // safe merely because it lacks "..".
+            Assert.Null(_storage.GetAbsolutePath("C:foo.png"));
+        }
+
+        [Fact]
+        public void GetAbsolutePath_WithUncPath_ReturnsNullInsteadOfEscapingRoot()
+        {
+            Assert.Null(_storage.GetAbsolutePath(@"\\server\share\outside.png"));
+        }
+
+        [Fact]
         public void GetAbsolutePath_WithTraversalSegments_ReturnsNullInsteadOfEscapingRoot()
         {
             var traversalPath = Path.Combine("..", "..", "outside.png");

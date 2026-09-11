@@ -19,6 +19,15 @@ namespace PluginCoverShuffle.Tests.Fakes
         /// <summary>When set, <see cref="SetCoverReference"/> throws for this game, simulating an unexpected per-game failure.</summary>
         public Guid? GameIdToThrowOn { get; set; }
 
+        /// <summary>
+        /// Games in this set silently ignore <see cref="SetCoverReference"/>,
+        /// mirroring the real <c>PlayniteGameService</c> when the game can no
+        /// longer be resolved in Playnite's database - no exception, but the
+        /// write simply never takes effect. Lets tests exercise a caller's
+        /// read-back verification without relying on an exception path.
+        /// </summary>
+        public HashSet<Guid> GameIdsIgnoringSetCoverReference { get; } = new HashSet<Guid>();
+
         public void SeedCoverReference(Guid gameId, string coverReference)
         {
             _coverReferences[gameId] = coverReference;
@@ -36,8 +45,14 @@ namespace PluginCoverShuffle.Tests.Fakes
                 throw new InvalidOperationException("Simulated failure for test purposes.");
             }
 
-            _coverReferences[gameId] = coverReference;
             SetCoverReferenceCalls.Add((gameId, coverReference));
+
+            if (GameIdsIgnoringSetCoverReference.Contains(gameId))
+            {
+                return;
+            }
+
+            _coverReferences[gameId] = coverReference;
         }
 
         public void SeedGameName(Guid gameId, string name)
