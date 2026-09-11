@@ -241,7 +241,29 @@ exceptions to you.
 - Tests: `dotnet test Tests/PluginCoverShuffle.Tests.csproj` — all tests run
   against fakes; none require a live Playnite installation, network access,
   or a SteamGridDB API key.
-- Versioning: bump `<Version>`/`<AssemblyVersion>`/`<FileVersion>` in
-  `PluginCoverShuffle.csproj` and `Version` in `extension.yaml` together —
-  they must always match.
 - See `CLAUDE.md` for the engineering ruleset this project was built against.
+
+## Versioning
+
+Cover Shuffle follows [Semantic Versioning](https://semver.org/)
+(`Major.Minor.Patch`):
+
+- **Major** — a breaking change: persisted data that can't be migrated
+  forward, or a user-visible behavior change that isn't backward compatible.
+- **Minor** — new functionality that's backward compatible (a new cover
+  source, a new manager feature, etc.).
+- **Patch** — bug fixes only, no new functionality.
+
+When bumping the version, update all of the following together — they must
+always agree:
+
+- `<Version>` / `<AssemblyVersion>` / `<FileVersion>` in
+  `PluginCoverShuffle.csproj`
+- `Version` in `extension.yaml`
+- "Current project version" in `CLAUDE.md`
+- a new entry at the top of `CHANGELOG.md`
+
+The plugin's internal on-disk data schema (`CurrentSchemaVersion` in
+`CoverShuffleRepository.cs`) is versioned separately and does not need to
+change in lockstep with the product release version — it only bumps when the
+persisted data's shape actually changes.
