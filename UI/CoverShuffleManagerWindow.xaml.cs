@@ -195,6 +195,13 @@ namespace PluginCoverShuffle.UI
 
         private void FilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_viewModel == null)
+            {
+                // XAML pre-selects an item, which fires this handler during
+                // InitializeComponent() before the constructor assigns _viewModel.
+                return;
+            }
+
             var tag = (FilterCombo.SelectedItem as ComboBoxItem)?.Tag as string;
             if (Enum.TryParse<ManagedGameFilterMode>(tag, out var mode))
             {
@@ -204,6 +211,12 @@ namespace PluginCoverShuffle.UI
 
         private void SortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_viewModel == null)
+            {
+                // Same InitializeComponent()-ordering hazard as FilterCombo_SelectionChanged.
+                return;
+            }
+
             var tag = (SortCombo.SelectedItem as ComboBoxItem)?.Tag as string;
             if (Enum.TryParse<ManagedGameSortMode>(tag, out var mode))
             {
@@ -213,6 +226,12 @@ namespace PluginCoverShuffle.UI
 
         private void SourceFilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_viewModel == null)
+            {
+                // Same InitializeComponent()-ordering hazard as FilterCombo_SelectionChanged.
+                return;
+            }
+
             var tag = (SourceFilterCombo.SelectedItem as ComboBoxItem)?.Tag as string;
             _viewModel.SourceFilter = Enum.TryParse<Domain.CoverSource>(tag, out var source) ? source : (Domain.CoverSource?)null;
         }
